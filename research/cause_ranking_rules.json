@@ -1,0 +1,637 @@
+{
+  "version": "1.0",
+  "title": "AI Dispensing Defect Detective — cause ranking rules",
+  "notes": "Ranking is deterministic. An LLM may explain fired rules but must not change weights. Solder-paste baselines are Type 4; powder factors rescale clog/oxidation/spread. Weights in each baseline sum to 100.",
+  "sources": [
+    "https://nswautomation.com/NSW/micro-dispensing-application-solutions/",
+    "https://nswautomation.com/NSW/prevent-solder-paste-dispensing-clog/",
+    "https://www.aimsolder.com/white-paper/solder-paste-powder-when-to-downsize/",
+    "IPC J-STD-005A particle size classification (via AIM)",
+    "NPL Dispensing Code of Practice (stringing/satellites)",
+    "Indium / Nordson needle ID vs powder type guidance"
+  ],
+  "defect_classes": [
+    "under_dispense",
+    "over_dispense",
+    "missing",
+    "inconsistent_volume",
+    "spreading",
+    "air_bubble_irregular"
+  ],
+  "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"],
+  "patterns": ["dot", "line", "dam_fill"],
+  "powder_types": {
+    "T3": {
+      "d_min_um": 25,
+      "d_max_um": 45,
+      "nsw_min_nozzle_um": 225,
+      "sa_v_ratio_vs_t4": 0.64,
+      "clog_factor": 0.7,
+      "oxidation_factor": 0.55,
+      "spread_factor": 1.15,
+      "typical_use": "Larger SMT (0603/0805). Forgiving. NSW prefers T5+ for micro-dispensing."
+    },
+    "T4": {
+      "d_min_um": 20,
+      "d_max_um": 38,
+      "nsw_min_nozzle_um": 190,
+      "sa_v_ratio_vs_t4": 1.0,
+      "clog_factor": 1.0,
+      "oxidation_factor": 1.0,
+      "spread_factor": 1.0,
+      "typical_use": "0201s, 0.5 mm BGA — current SMT standard."
+    },
+    "T5": {
+      "d_min_um": 15,
+      "d_max_um": 25,
+      "nsw_min_nozzle_um": 125,
+      "sa_v_ratio_vs_t4": 1.45,
+      "clog_factor": 1.3,
+      "oxidation_factor": 1.35,
+      "spread_factor": 0.8,
+      "typical_use": "01005s, ultra-fine pitch. NSW recommended starting type for general dispensing."
+    },
+    "T6": {
+      "d_min_um": 5,
+      "d_max_um": 15,
+      "nsw_min_nozzle_um": 80,
+      "sa_v_ratio_vs_t4": 2.9,
+      "clog_factor": 1.7,
+      "oxidation_factor": 1.85,
+      "spread_factor": 0.6,
+      "typical_use": "microLED, chip-scale, SiP. NSW: 80 µm dots with T6. Highest clog and oxidation risk."
+    }
+  },
+  "five_x_rule": {
+    "statement": "Nozzle inner diameter should be at least 5x the largest powder particle diameter.",
+    "source": "NSW Automation clog-prevention guide; AIM 5-ball rule adapted from stencil to nozzle ID.",
+    "conservative_industry": "Some needle vendors use 7x powder size (Nordson/Indium).",
+    "t6_vs_t4_copy": "Type 6 powder has ~3x the surface-area-to-volume ratio of Type 4, so it oxidizes and agglomerates faster."
+  },
+  "causes": {
+    "nozzle_partial_clog": {
+      "name": "Partial nozzle / valve clog",
+      "category": "Nozzle",
+      "cost_rank": 2,
+      "check": "Inspect the nozzle under magnification; purge or replace the tip; clean with the recommended solvent (NSW: IPA ultrasonic for paste nozzles).",
+      "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    "powder_nozzle_mismatch": {
+      "name": "Nozzle ID vs powder size (5x rule)",
+      "category": "Material-process match",
+      "cost_rank": 3,
+      "check": "Confirm paste type (T3-T6) and nozzle ID. NSW: ID >= 5x largest particle (T5 >= 125 um, T6 >= 80 um).",
+      "materials": ["solder_paste"]
+    },
+    "powder_oxidation": {
+      "name": "Powder oxidation / agglomeration",
+      "category": "Material",
+      "cost_rank": 4,
+      "check": "Check paste age, fridge-to-floor warmup, and whether T5/T6 was left open. Finer powder oxidizes faster.",
+      "materials": ["solder_paste"]
+    },
+    "flux_metal_separation": {
+      "name": "Flux / metal separation in the syringe",
+      "category": "Material",
+      "cost_rank": 2,
+      "check": "NSW: store syringe tip-down; use dispensing-grade paste; keep pressure low so flux does not separate from powder.",
+      "materials": ["solder_paste"]
+    },
+    "air_trapped_syringe": {
+      "name": "Air trapped in syringe or fluid path",
+      "category": "Material supply",
+      "cost_rank": 1,
+      "check": "Look for bubbles in the syringe, piston tunneling, or a pocket of air under a stopped piston. Purge until a solid bead appears.",
+      "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    "pressure_time_low": {
+      "name": "Pressure or dispense time too low / unstable",
+      "category": "Parameters",
+      "cost_rank": 2,
+      "check": "Verify pressure and on-time against the last known-good recipe. Look for regulator drift.",
+      "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    "pressure_time_high": {
+      "name": "Pressure or dispense time too high",
+      "category": "Parameters",
+      "cost_rank": 2,
+      "check": "Reduce pressure/time. NSW: high pressure separates paste and causes clogs; UV/silicone will flood the pad.",
+      "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    "z_gap_wrong": {
+      "name": "Z-gap (nozzle-to-board) out of window",
+      "category": "Process",
+      "cost_rank": 3,
+      "check": "NSW: too low traps particles in the tip (clog); too high and the fluid does not wet the surface (tall peaks, stringing, missing).",
+      "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    "material_storage_expired": {
+      "name": "Expired, warm, or poorly stored material",
+      "category": "Material",
+      "cost_rank": 2,
+      "check": "Check expiry, storage temperature (NSW paste: cool room <15 C unless vendor says otherwise), and time out of fridge.",
+      "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    "viscosity_temp_humidity": {
+      "name": "Viscosity shift from temperature / humidity",
+      "category": "Environment",
+      "cost_rank": 3,
+      "check": "Log booth temperature and humidity. Paste and silicone thin when warm; UV glue flow is strongly viscosity-driven.",
+      "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    "equipment_wear": {
+      "name": "Valve, pump, or regulator wear",
+      "category": "Equipment",
+      "cost_rank": 5,
+      "check": "Last check after cheaper items. Look for inconsistent shot weight on a scale, leaking seals, or a drifting regulator.",
+      "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    "substrate_contamination": {
+      "name": "Substrate contamination or poor wetting",
+      "category": "Board",
+      "cost_rank": 3,
+      "check": "Inspect the local pad/cavity for flux residue, mold release, fingerprints, or uneven topography. More likely if the defect is in one location.",
+      "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    "stringing_satellites": {
+      "name": "Stringing / satellites on needle retract",
+      "category": "Process",
+      "cost_rank": 3,
+      "check": "Increase retract height so the bead snaps before the head moves (NPL dispensing code). Do not treat this as stencil smear.",
+      "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    "piston_suckback": {
+      "name": "Piston mismatch or excessive vacuum suck-back",
+      "category": "Hardware setup",
+      "cost_rank": 3,
+      "check": "Excess suck-back pulls air into the syringe (Dymax). Never fill a syringe more than ~2/3 full. Match piston type to viscosity.",
+      "materials": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    "filler_settling": {
+      "name": "Silver filler settling / mix inconsistency",
+      "category": "Material",
+      "cost_rank": 2,
+      "check": "Remix or replace the syringe per vendor instructions. Settled silver looks like clogging and inconsistent volume.",
+      "materials": ["silver_epoxy"]
+    },
+    "premature_uv_cure": {
+      "name": "Premature UV cure in barrel or tip",
+      "category": "Material-process match",
+      "cost_rank": 2,
+      "check": "Use opaque/amber UV-blocking barrels and tips. Replace plastic tips if adhesive has gelled. Watch pressure rise as a clog signal.",
+      "materials": ["uv_glue"]
+    },
+    "uv_process_window": {
+      "name": "UV lamp intensity or cure-time window",
+      "category": "Cure",
+      "cost_rank": 4,
+      "check": "Confirm lamp intensity and exposure time. Under-cure leaves wet spread; stray light gels the tip.",
+      "materials": ["uv_glue"]
+    },
+    "dam_flow_geometry": {
+      "name": "Dam path, speed, or substrate temperature",
+      "category": "Process",
+      "cost_rank": 3,
+      "check": "Slow the dam path, check gel temperature, and confirm dam height before fill. Collapse and voids are geometry/flow, not powder size.",
+      "materials": ["silicone_gel", "uv_glue"]
+    }
+  },
+  "baselines": {
+    "solder_paste": {
+      "under_dispense": {
+        "nozzle_partial_clog": 26,
+        "powder_nozzle_mismatch": 16,
+        "air_trapped_syringe": 14,
+        "pressure_time_low": 14,
+        "flux_metal_separation": 10,
+        "powder_oxidation": 8,
+        "z_gap_wrong": 7,
+        "material_storage_expired": 5
+      },
+      "over_dispense": {
+        "pressure_time_high": 28,
+        "viscosity_temp_humidity": 18,
+        "z_gap_wrong": 14,
+        "piston_suckback": 12,
+        "equipment_wear": 10,
+        "material_storage_expired": 10,
+        "substrate_contamination": 8
+      },
+      "missing": {
+        "nozzle_partial_clog": 30,
+        "powder_nozzle_mismatch": 18,
+        "air_trapped_syringe": 16,
+        "flux_metal_separation": 12,
+        "pressure_time_low": 10,
+        "equipment_wear": 8,
+        "material_storage_expired": 6
+      },
+      "inconsistent_volume": {
+        "air_trapped_syringe": 24,
+        "nozzle_partial_clog": 18,
+        "viscosity_temp_humidity": 14,
+        "pressure_time_low": 12,
+        "flux_metal_separation": 12,
+        "powder_oxidation": 10,
+        "equipment_wear": 10
+      },
+      "spreading": {
+        "viscosity_temp_humidity": 26,
+        "pressure_time_high": 20,
+        "z_gap_wrong": 14,
+        "material_storage_expired": 14,
+        "substrate_contamination": 14,
+        "flux_metal_separation": 6,
+        "powder_oxidation": 6
+      },
+      "air_bubble_irregular": {
+        "air_trapped_syringe": 28,
+        "piston_suckback": 16,
+        "stringing_satellites": 16,
+        "powder_oxidation": 12,
+        "pressure_time_high": 12,
+        "z_gap_wrong": 8,
+        "flux_metal_separation": 8
+      }
+    },
+    "silver_epoxy": {
+      "under_dispense": {
+        "nozzle_partial_clog": 24,
+        "filler_settling": 18,
+        "pressure_time_low": 16,
+        "air_trapped_syringe": 14,
+        "z_gap_wrong": 10,
+        "material_storage_expired": 10,
+        "equipment_wear": 8
+      },
+      "over_dispense": {
+        "pressure_time_high": 28,
+        "viscosity_temp_humidity": 18,
+        "z_gap_wrong": 14,
+        "piston_suckback": 12,
+        "filler_settling": 10,
+        "equipment_wear": 10,
+        "substrate_contamination": 8
+      },
+      "missing": {
+        "nozzle_partial_clog": 28,
+        "filler_settling": 18,
+        "air_trapped_syringe": 16,
+        "pressure_time_low": 14,
+        "material_storage_expired": 10,
+        "equipment_wear": 8,
+        "z_gap_wrong": 6
+      },
+      "inconsistent_volume": {
+        "filler_settling": 22,
+        "air_trapped_syringe": 20,
+        "nozzle_partial_clog": 16,
+        "viscosity_temp_humidity": 12,
+        "pressure_time_low": 12,
+        "piston_suckback": 10,
+        "equipment_wear": 8
+      },
+      "spreading": {
+        "viscosity_temp_humidity": 26,
+        "pressure_time_high": 20,
+        "substrate_contamination": 16,
+        "z_gap_wrong": 14,
+        "material_storage_expired": 12,
+        "filler_settling": 6,
+        "piston_suckback": 6
+      },
+      "air_bubble_irregular": {
+        "air_trapped_syringe": 28,
+        "piston_suckback": 18,
+        "stringing_satellites": 14,
+        "pressure_time_high": 12,
+        "filler_settling": 10,
+        "z_gap_wrong": 10,
+        "nozzle_partial_clog": 8
+      }
+    },
+    "uv_glue": {
+      "under_dispense": {
+        "premature_uv_cure": 28,
+        "pressure_time_low": 18,
+        "nozzle_partial_clog": 16,
+        "air_trapped_syringe": 14,
+        "z_gap_wrong": 12,
+        "material_storage_expired": 6,
+        "uv_process_window": 6
+      },
+      "over_dispense": {
+        "pressure_time_high": 30,
+        "viscosity_temp_humidity": 22,
+        "z_gap_wrong": 14,
+        "piston_suckback": 12,
+        "uv_process_window": 12,
+        "equipment_wear": 10
+      },
+      "missing": {
+        "premature_uv_cure": 32,
+        "nozzle_partial_clog": 20,
+        "air_trapped_syringe": 16,
+        "pressure_time_low": 14,
+        "equipment_wear": 10,
+        "material_storage_expired": 8
+      },
+      "inconsistent_volume": {
+        "air_trapped_syringe": 22,
+        "premature_uv_cure": 18,
+        "viscosity_temp_humidity": 16,
+        "pressure_time_low": 14,
+        "piston_suckback": 14,
+        "equipment_wear": 16
+      },
+      "spreading": {
+        "viscosity_temp_humidity": 30,
+        "pressure_time_high": 22,
+        "substrate_contamination": 14,
+        "z_gap_wrong": 12,
+        "uv_process_window": 12,
+        "material_storage_expired": 10
+      },
+      "air_bubble_irregular": {
+        "air_trapped_syringe": 30,
+        "piston_suckback": 24,
+        "pressure_time_high": 16,
+        "premature_uv_cure": 10,
+        "z_gap_wrong": 10,
+        "stringing_satellites": 10
+      }
+    },
+    "silicone_gel": {
+      "under_dispense": {
+        "pressure_time_low": 22,
+        "viscosity_temp_humidity": 18,
+        "air_trapped_syringe": 16,
+        "dam_flow_geometry": 14,
+        "z_gap_wrong": 12,
+        "nozzle_partial_clog": 10,
+        "material_storage_expired": 8
+      },
+      "over_dispense": {
+        "pressure_time_high": 28,
+        "viscosity_temp_humidity": 22,
+        "dam_flow_geometry": 16,
+        "z_gap_wrong": 12,
+        "piston_suckback": 12,
+        "equipment_wear": 10
+      },
+      "missing": {
+        "air_trapped_syringe": 22,
+        "pressure_time_low": 20,
+        "nozzle_partial_clog": 16,
+        "dam_flow_geometry": 14,
+        "z_gap_wrong": 14,
+        "equipment_wear": 14
+      },
+      "inconsistent_volume": {
+        "viscosity_temp_humidity": 22,
+        "air_trapped_syringe": 20,
+        "pressure_time_low": 16,
+        "dam_flow_geometry": 14,
+        "piston_suckback": 14,
+        "equipment_wear": 14
+      },
+      "spreading": {
+        "viscosity_temp_humidity": 28,
+        "dam_flow_geometry": 22,
+        "pressure_time_high": 18,
+        "substrate_contamination": 12,
+        "z_gap_wrong": 10,
+        "material_storage_expired": 10
+      },
+      "air_bubble_irregular": {
+        "air_trapped_syringe": 30,
+        "dam_flow_geometry": 18,
+        "piston_suckback": 16,
+        "stringing_satellites": 12,
+        "pressure_time_high": 12,
+        "viscosity_temp_humidity": 12
+      }
+    }
+  },
+  "pattern_multipliers": {
+    "dot": {},
+    "line": {
+      "stringing_satellites": 1.15,
+      "z_gap_wrong": 1.1
+    },
+    "dam_fill": {
+      "dam_flow_geometry": 1.45,
+      "substrate_contamination": 1.15,
+      "viscosity_temp_humidity": 1.15,
+      "powder_nozzle_mismatch": 0.75
+    }
+  },
+  "adjustment_rules": [
+    {
+      "id": "occasional_points_to_air",
+      "when": {"frequency": "occasional"},
+      "multiply": {
+        "air_trapped_syringe": 1.8,
+        "piston_suckback": 1.35,
+        "nozzle_partial_clog": 0.75,
+        "equipment_wear": 0.8,
+        "powder_nozzle_mismatch": 0.85
+      },
+      "explain": "Volume that comes and goes is classic trapped air or tunneling, not a steadily clogging nozzle."
+    },
+    {
+      "id": "continuous_points_to_clog_or_drift",
+      "when": {"frequency": "continuous"},
+      "multiply": {
+        "nozzle_partial_clog": 1.45,
+        "powder_nozzle_mismatch": 1.3,
+        "viscosity_temp_humidity": 1.25,
+        "premature_uv_cure": 1.25,
+        "filler_settling": 1.2,
+        "air_trapped_syringe": 0.7
+      },
+      "explain": "A defect that never recovers is more likely a clog, wrong nozzle/powder pair, or a viscosity/cure drift than a random bubble."
+    },
+    {
+      "id": "recent_nozzle_change",
+      "when": {"recent_change": "nozzle"},
+      "multiply": {
+        "nozzle_partial_clog": 1.4,
+        "powder_nozzle_mismatch": 1.7,
+        "z_gap_wrong": 1.3,
+        "premature_uv_cure": 1.2
+      },
+      "explain": "A just-changed nozzle is the first place to apply the NSW 5x ID rule and re-check Z-gap."
+    },
+    {
+      "id": "recent_material_change",
+      "when": {"recent_change": "material"},
+      "multiply": {
+        "material_storage_expired": 1.5,
+        "powder_oxidation": 1.4,
+        "powder_nozzle_mismatch": 1.35,
+        "viscosity_temp_humidity": 1.3,
+        "filler_settling": 1.5,
+        "premature_uv_cure": 1.3,
+        "flux_metal_separation": 1.25
+      },
+      "explain": "New or swapped material changes particle size, filler load, or UV sensitivity. Re-validate nozzle pairing and storage."
+    },
+    {
+      "id": "recent_settings_change",
+      "when": {"recent_change": "settings"},
+      "multiply": {
+        "pressure_time_low": 1.45,
+        "pressure_time_high": 1.45,
+        "z_gap_wrong": 1.2,
+        "piston_suckback": 1.2
+      },
+      "explain": "If pressure, time, or suck-back was just edited, parameter error outranks material ageing."
+    },
+    {
+      "id": "single_location",
+      "when": {"location": "single"},
+      "multiply": {
+        "z_gap_wrong": 1.4,
+        "substrate_contamination": 1.5,
+        "nozzle_partial_clog": 1.1,
+        "viscosity_temp_humidity": 0.75,
+        "material_storage_expired": 0.8
+      },
+      "explain": "One site implicates local Z-height, a dirty pad, or a path-specific skip — not a whole-syringe material problem."
+    },
+    {
+      "id": "multi_location",
+      "when": {"location": "multiple"},
+      "multiply": {
+        "viscosity_temp_humidity": 1.3,
+        "material_storage_expired": 1.25,
+        "powder_oxidation": 1.25,
+        "pressure_time_low": 1.15,
+        "pressure_time_high": 1.15,
+        "filler_settling": 1.25,
+        "premature_uv_cure": 1.2,
+        "substrate_contamination": 0.7
+      },
+      "explain": "The same defect across many sites is systemic: material, environment, or machine parameters."
+    },
+    {
+      "id": "after_runtime_warmup",
+      "when": {"timing": "after_runtime"},
+      "multiply": {
+        "premature_uv_cure": 1.7,
+        "nozzle_partial_clog": 1.3,
+        "powder_oxidation": 1.2,
+        "viscosity_temp_humidity": 1.25,
+        "filler_settling": 1.2
+      },
+      "explain": "Starts good, then fails: UV glue gelling in the tip, paste drying/oxidizing, or viscosity climbing as the valve warms."
+    },
+    {
+      "id": "clear_uv_barrel",
+      "when": {"uv_barrel": "clear"},
+      "multiply": {
+        "premature_uv_cure": 1.9,
+        "nozzle_partial_clog": 1.25
+      },
+      "explain": "Clear barrels and tips let stray light gel UV adhesive in the fluid path — a common, avoidable clog."
+    },
+    {
+      "id": "epoxy_not_mixed",
+      "when": {"mix_state": "no"},
+      "multiply": {
+        "filler_settling": 1.8,
+        "nozzle_partial_clog": 1.2
+      },
+      "explain": "Unmixed silver epoxy lets filler settle, which looks like random volume and then a sudden clog."
+    }
+  ],
+  "downstream_warnings": {
+    "over_dispense": ["bridging"],
+    "spreading": ["bridging"],
+    "under_dispense": ["tombstoning", "open_joint"],
+    "inconsistent_volume": ["tombstoning"],
+    "air_bubble_irregular": ["voiding", "satellites"],
+    "missing": ["open_joint"]
+  },
+  "discovery_questions": [
+    {
+      "id": "material",
+      "prompt": "What material is being dispensed?",
+      "options": ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+    },
+    {
+      "id": "pattern",
+      "prompt": "What pattern is being dispensed?",
+      "options": ["dot", "line", "dam_fill"]
+    },
+    {
+      "id": "amount",
+      "prompt": "Is the dispensed amount too small, too large, missing, inconsistent, spreading, or irregular/bubbly?",
+      "options": ["too_small", "too_large", "missing", "inconsistent", "spreading", "irregular"],
+      "maps_to_defect": {
+        "too_small": "under_dispense",
+        "too_large": "over_dispense",
+        "missing": "missing",
+        "inconsistent": "inconsistent_volume",
+        "spreading": "spreading",
+        "irregular": "air_bubble_irregular"
+      }
+    },
+    {
+      "id": "frequency",
+      "prompt": "Is the defect happening continuously or only occasionally?",
+      "options": ["continuous", "occasional"]
+    },
+    {
+      "id": "recent_change",
+      "prompt": "Has the material, nozzle, or process setting recently changed?",
+      "options": ["none", "material", "nozzle", "settings"]
+    },
+    {
+      "id": "location",
+      "prompt": "Is the defect happening at one location or across multiple locations?",
+      "options": ["single", "multiple"]
+    }
+  ],
+  "followups": {
+    "solder_paste": [
+      {
+        "id": "powder_type",
+        "prompt": "Which solder powder type is in the syringe?",
+        "options": ["T3", "T4", "T5", "T6", "unknown"]
+      },
+      {
+        "id": "nozzle_id_um",
+        "prompt": "Optional: nozzle inner diameter in micrometres (NSW 5x check).",
+        "options": "number_or_skip"
+      }
+    ],
+    "uv_glue": [
+      {
+        "id": "uv_barrel",
+        "prompt": "Are the syringe and tip UV-blocking (amber/black), or clear?",
+        "options": ["blocking", "clear", "unknown"]
+      },
+      {
+        "id": "timing",
+        "prompt": "Does it start good and fail after the machine has been running?",
+        "options": ["immediate", "after_runtime", "unknown"]
+      }
+    ],
+    "silicone_gel": [
+      {
+        "id": "timing",
+        "prompt": "Does flow change after the line has been running (temperature drift)?",
+        "options": ["immediate", "after_runtime", "unknown"]
+      }
+    ],
+    "silver_epoxy": [
+      {
+        "id": "mix_state",
+        "prompt": "Was the silver epoxy freshly mixed / syringe rolled before loading?",
+        "options": ["yes", "no", "unknown"]
+      }
+    ]
+  }
+}

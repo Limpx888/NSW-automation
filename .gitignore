@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.env
+.env.local
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Data (keep small samples; ignore bulk synthetic sets)
+data/synthetic/
+data/real/
+data/pcb_aoi/
+*.jpg
+*.jpeg
+*.jpg
+*.jpeg
+*.png
+*.bmp
+!docs/**/*.png
+!data/samples/*.png
+
+# Models
+*.pt
+*.pth
+*.ckpt
+*.onnx
+model/checkpoints/
+model/weights/
+
+# Runtime
+*.db
+*.sqlite
+*.sqlite3
+reports/generated/
+.streamlit/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
