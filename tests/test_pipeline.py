@@ -18,6 +18,10 @@ def test_discovery_then_followup():
     q = next_question(answers)
     assert q["id"] == "powder_type"
     answers["powder_type"] = "T6"
+    q = next_question(answers, include_optional=False)
+    assert q is not None
+    assert q["id"] == "onset"
+    answers["onset"] = "from_start"
     assert is_complete(answers)
 
 

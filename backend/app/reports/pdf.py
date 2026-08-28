@@ -69,20 +69,20 @@ def build_pdf(session: dict, dest: Path | None = None) -> bytes:
             f"&nbsp;&nbsp; Quality score: <b>{quality.get('overall_quality_score', 'n/a')}</b>/100",
             body,
         ),
-        Paragraph("3. AI analysis", h),
-        Paragraph((session.get("explanation") or "").replace("\n", "<br/>"), body),
+        Paragraph("3. AI analysis (WHY)", h),
+        Paragraph((session.get("reasoning_chain") or session.get("explanation") or "").replace("\n", "<br/>"), body),
         Paragraph(similar.get("summary", ""), body),
         Paragraph("4. Ranked causes", h),
     ]
 
-    rows = [["#", "Cause", "Likelihood", "Category"]]
+    rows = [["#", "Cause", "Likelihood", "Family"]]
     for i, cause in enumerate(session.get("ranked_causes") or [], start=1):
         rows.append(
             [
                 str(i),
                 cause.get("name", cause.get("id")),
                 f"{cause.get('likelihood_pct', 0):.1f}%",
-                cause.get("category", ""),
+                cause.get("family_label", cause.get("category", "")),
             ]
         )
     table = Table(rows, colWidths=[15 * mm, 95 * mm, 30 * mm, 35 * mm])

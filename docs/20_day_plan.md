@@ -23,7 +23,7 @@ Keep vision (`predict`) and reasoning (`rank_causes`) as separate functions so o
 | 13 | SQLite case log + similar-case counts | Done (20 seeded cases) |
 | 14 | PDF report | Done |
 | 15 | FastAPI: /discover /predict /diagnose /report /history | Done |
-| 16 | Streamlit end-to-end UI | Done (`frontend/app.py`) |
+| 16 | Next.js end-to-end UI | Done (`frontend-next/`) |
 | 17 | 15–20 full sessions, < 2 min demo path | Done (`scripts/integration_demo.py`) |
 | 18 | Seed 15–20 historical cases | Done (20 seed rows in `db/cases.py`) |
 | 19 | Polish + slides | Outline in `docs/presentation_outline.md` |
