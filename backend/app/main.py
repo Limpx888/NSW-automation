@@ -9,8 +9,17 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
-from backend.app.db.cases import connect, recent_cases, seed_if_empty, similar_cases
+from backend.app.db.cases import (
+    connect,
+    get_case_by_session_id,
+    recent_cases,
+    seed_if_empty,
+    similar_cases,
+    update_case_feedback,
+    update_case_resolution,
+)
 from backend.app.pipeline import run_session
+from backend.app.reasoning.counter_test import apply_counter_test_feedback, select_next_verification_action
 from backend.app.reasoning.discover import core_progress, is_complete, next_question
 from backend.app.reasoning.explain_llm import explain_with_llm
 from backend.app.reasoning.rank_causes import explain_rules, load_rules, rank_causes
@@ -34,6 +43,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -189,3 +199,69 @@ def history(material: str | None = None, defect_class: str | None = None) -> dic
     if material and defect_class:
         return similar_cases(material, defect_class)
     return {"cases": recent_cases(20)}
+
+
+@app.post("/counter-test/verify")
+def counter_test_verify(payload: dict) -> dict:
+    current_causes = payload.get("current_causes") or []
+    test_id = payload.get("test_id")
+    feedback = payload.get("feedback")  # 'resolved' | 'unresolved' | 'shifted'
+    test_history = payload.get("test_history") or []
+    session_id = payload.get("session_id")
+
+    if not test_id or not feedback:
+        raise HTTPException(400, "Missing test_id or feedback")
+
+    res = apply_counter_test_feedback(current_causes, test_id, feedback, test_history)
+
+    # If resolved and session_id is provided, automatically persist confirmed cause
+    if res.get("resolved") and session_id and res.get("confirmed_cause"):
+        update_case_resolution(session_id, res["confirmed_cause"], res["elimination_pathway"])
+
+    return res
+
+
+@app.post("/counter-test/confirm")
+def counter_test_confirm(payload: dict) -> dict:
+    session_id = payload.get("session_id")
+    confirmed_cause = payload.get("confirmed_cause")
+    elimination_pathway = payload.get("elimination_pathway") or []
+    if not session_id or not confirmed_cause:
+        raise HTTPException(400, "Missing session_id or confirmed_cause")
+    success = update_case_resolution(session_id, confirmed_cause, elimination_pathway)
+    return {"status": "ok", "updated": success}
+
+
+@app.get("/cases/{session_id}")
+def get_case(session_id: str) -> dict:
+    case = get_case_by_session_id(session_id)
+    if not case:
+        raise HTTPException(404, f"Case with session_id '{session_id}' not found")
+    return case
+
+
+@app.post("/cases/feedback")
+@app.post("/api/v1/cases/feedback")
+def submit_case_feedback(payload: dict) -> dict:
+    session_id = payload.get("session_id")
+    status = payload.get("status") or "RESOLVED"
+    confirmed_cause = payload.get("confirmed_cause")
+    operator_notes = payload.get("operator_notes")
+
+    if not session_id or not confirmed_cause:
+        raise HTTPException(400, "Missing session_id or confirmed_cause")
+
+    updated = update_case_feedback(
+        session_id=session_id,
+        status=status,
+        confirmed_cause=confirmed_cause,
+        operator_notes=operator_notes,
+    )
+    if not updated:
+        raise HTTPException(404, f"Case with session_id '{session_id}' not found")
+    return {
+        "status": "ok",
+        "session_id": session_id,
+        "is_resolved": status.upper() in {"RESOLVED", "OK", "CONFIRMED"},
+        "confirmed_cause": confirmed_cause,
+    }

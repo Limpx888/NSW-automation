@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Troubleshoot from './pages/Troubleshoot';
 import History from './pages/History';
+import QuickFeedback from './pages/QuickFeedback';
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/troubleshoot" element={<Troubleshoot />} />
             <Route path="/history" element={<History />} />
+            <Route path="/quick-feedback" element={<QuickFeedback />} />
           </Routes>
         </main>
 

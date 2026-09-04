@@ -11,6 +11,7 @@ from backend.app.reasoning.discover import apply_amount
 from backend.app.reasoning.explain_llm import explain_with_llm
 from backend.app.reasoning.rank_causes import explain_rules, rank_causes
 from backend.app.reasoning.generate_sop import generate_action_plan
+from backend.app.reasoning.counter_test import select_next_verification_action
 from backend.app.vision.predict import predict_image, quality_assessment
 
 
@@ -31,6 +32,9 @@ def run_session(answers: dict[str, Any], image_bgr: np.ndarray | None = None) ->
     
     # Generate the LLM structured SOP plan
     result["sop_plan"] = generate_action_plan(result)
+    
+    # Attach initial low-cost counter-test
+    result["initial_test"] = select_next_verification_action(result.get("ranked_causes", []), [])
     
     if vision:
         result["vision"] = vision

@@ -14,6 +14,7 @@ from backend.app.reasoning.fuzzy import (
     blend_factor,
     when_strength,
 )
+from backend.app.reasoning.rheology import calculate_rheology_offset
 
 RULES_PATH = (
     Path(__file__).resolve().parents[3] / "research" / "cause_ranking_rules.json"
@@ -284,6 +285,60 @@ def rank_causes(symptoms: dict[str, Any], rules_path: str | None = None) -> dict
         fired.append({"id": rule["id"], "explain": note, "membership": round(mu, 3)})
 
     evidence_by_cause = _apply_evidence(weights, symptoms, rules)
+
+    # Physical Rheology & Thermal Offset evaluation
+    rheology = calculate_rheology_offset(
+        material=material,
+        ambient_temp_c=symptoms.get("ambient_temp_c"),
+        pot_life_hours=symptoms.get("pot_life_hours"),
+    )
+    if rheology["viscosity_drift_pct"] <= -6.0:
+        for cid, delta in [("viscosity_temp_humidity", 15.0), ("pressure_time_high", 10.0)]:
+            if cid in weights:
+                weights[cid] = weights.get(cid, 1.0) + delta
+                evidence_by_cause.setdefault(cid, []).append({
+                    "rule_id": "thermal_thinning_drift",
+                    "label": f"Ambient warm drift +{rheology['delta_t_c']}°C (Viscosity {rheology['viscosity_drift_pct']}%)",
+                    "delta": delta,
+                    "membership": 1.0,
+                })
+        fired.append({
+            "id": "thermal_thinning_drift",
+            "explain": f"Ambient temp is +{rheology['delta_t_c']}°C above baseline; viscosity drops {rheology['viscosity_drift_pct']}%.",
+            "membership": 1.0,
+        })
+    elif rheology["viscosity_drift_pct"] >= 6.0:
+        for cid, delta in [("viscosity_temp_humidity", 15.0), ("nozzle_partial_clog", 10.0), ("pressure_time_low", 8.0)]:
+            if cid in weights:
+                weights[cid] = weights.get(cid, 1.0) + delta
+                evidence_by_cause.setdefault(cid, []).append({
+                    "rule_id": "thermal_thickening_drift",
+                    "label": f"Ambient cold drift {rheology['delta_t_c']}°C (Viscosity +{rheology['viscosity_drift_pct']}%)",
+                    "delta": delta,
+                    "membership": 1.0,
+                })
+        fired.append({
+            "id": "thermal_thickening_drift",
+            "explain": f"Ambient temp is {rheology['delta_t_c']}°C below baseline; viscosity rises +{rheology['viscosity_drift_pct']}%.",
+            "membership": 1.0,
+        })
+
+    if rheology["pot_life_hours"] > 6.0:
+        for cid in ["powder_oxidation", "flux_metal_separation", "filler_settling"]:
+            if cid in weights:
+                weights[cid] = weights.get(cid, 1.0) + 12.0
+                evidence_by_cause.setdefault(cid, []).append({
+                    "rule_id": "pot_life_exceeded",
+                    "label": f"Fluid open lifetime exceeds {rheology['pot_life_hours']}h",
+                    "delta": 12.0,
+                    "membership": 1.0,
+                })
+        fired.append({
+            "id": "pot_life_exceeded",
+            "explain": f"Syringe open lifetime is {rheology['pot_life_hours']}h (> 6h standard).",
+            "membership": 1.0,
+        })
+
     weights = _renormalize(weights)
 
     vision_conf = symptoms.get("vision_confidence")
@@ -365,6 +420,7 @@ def rank_causes(symptoms: dict[str, Any], rules_path: str | None = None) -> dict
         "vision_confidence": vision_conf,
         "score_formula": SCORE_FORMULA,
         "family_ranked": family_ranked,
+        "rheology": rheology,
         "symptoms": dict(symptoms),
         "fuzzy": {
             "question_fire": QUESTION_FIRE,

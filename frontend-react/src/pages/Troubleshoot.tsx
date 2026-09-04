@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
-import { downloadReport, fetchMeta, postDiscover, postSession, sampleUrl } from "../lib/api";
+import { downloadReport, fetchMeta, postCounterTestVerify, postDiscover, postSession, sampleUrl } from "../lib/api";
 import { DEMO_PRESET, FOLLOWUP_KEYS, pretty } from "../lib/content";
 
 const SKIPPED = "_skipped";
@@ -22,9 +22,18 @@ function TroubleshootInner() {
   const [nozzle, setNozzle] = useState(0);
   const [openCause, setOpenCause] = useState<string | null>(null);
   
-  // Technician Mode states
-  const [resolvedSteps, setResolvedSteps] = useState<Record<string, boolean>>({});
-  const [technicianMode, setTechnicianMode] = useState(false); // Feature 4
+  // Environmental & Rheology parameters
+  const [ambientTemp, setAmbientTemp] = useState<number>(23.0);
+  const [potLife, setPotLife] = useState<number>(0.5);
+
+  // Hypothesis-Testing & Counter-Test Loop states
+  const [currentTest, setCurrentTest] = useState<any>(null);
+  const [eliminationPathway, setEliminationPathway] = useState<any[]>([]);
+  const [historyStack, setHistoryStack] = useState<any[]>([]);
+  const [isResolved, setIsResolved] = useState(false);
+  const [confirmedCause, setConfirmedCause] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [initialCausesBackup, setInitialCausesBackup] = useState<any[]>([]);
 
   const refreshQuestion = useCallback(async (nextAnswers: Record<string, any>, llm = useLlm) => {
     const payload = { ...nextAnswers, use_llm: llm, include_optional: true };
@@ -109,10 +118,22 @@ function TroubleshootInner() {
     setAnalyzing(true);
     setError("");
     try {
-      const res = await postSession(answers, file, sample || null);
+      const sessionPayload = {
+        ...answers,
+        ambient_temp_c: ambientTemp,
+        pot_life_hours: potLife,
+      };
+      const res = await postSession(sessionPayload, file, sample || null);
       setResult(res);
       setOpenCause(res.ranked_causes?.[0]?.id ?? null);
-      setResolvedSteps({}); // Reset checklists
+      
+      // Initialize Counter-Test Loop
+      setEliminationPathway([]);
+      setHistoryStack([]);
+      setIsResolved(false);
+      setConfirmedCause(null);
+      setCurrentTest(res.initial_test || null);
+      setInitialCausesBackup(res.ranked_causes ? JSON.parse(JSON.stringify(res.ranked_causes)) : []);
     } catch (err: any) {
       setError(err.message || "Analyse failed");
     } finally {
@@ -120,9 +141,92 @@ function TroubleshootInner() {
     }
   };
 
+  const handleCounterTestFeedback = async (feedback: "resolved" | "unresolved" | "shifted") => {
+    if (!currentTest || !result || verifying) return;
+    setVerifying(true);
+    try {
+      // Push state snapshot for 1-Click Undo
+      const snapshot = {
+        ranked_causes: JSON.parse(JSON.stringify(result.ranked_causes || [])),
+        currentTest: { ...currentTest },
+        eliminationPathway: [...eliminationPathway],
+        isResolved,
+        confirmedCause,
+        openCause,
+      };
+      setHistoryStack((prev) => [...prev, snapshot]);
+
+      const res = await postCounterTestVerify({
+        current_causes: result.ranked_causes,
+        test_id: currentTest.action_id,
+        feedback,
+        test_history: eliminationPathway,
+        session_id: result.session_id,
+      });
+
+      setResult((prev: any) => ({
+        ...prev,
+        ranked_causes: res.ranked_causes,
+        confirmed_cause: res.confirmed_cause,
+        elimination_pathway: res.elimination_pathway,
+      }));
+
+      setEliminationPathway(res.elimination_pathway || []);
+      setCurrentTest(res.next_test || null);
+      setIsResolved(Boolean(res.resolved));
+      setConfirmedCause(res.confirmed_cause || null);
+      if (res.ranked_causes?.[0]?.id) {
+        setOpenCause(res.ranked_causes[0].id);
+      }
+    } catch (err: any) {
+      setError(err.message || "Verification step failed");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleUndoStep = () => {
+    if (historyStack.length === 0 || !result) return;
+    const prevSnapshot = historyStack[historyStack.length - 1];
+    setHistoryStack((prev) => prev.slice(0, -1));
+
+    setResult((prev: any) => ({
+      ...prev,
+      ranked_causes: prevSnapshot.ranked_causes,
+      confirmed_cause: prevSnapshot.confirmedCause,
+      elimination_pathway: prevSnapshot.eliminationPathway,
+    }));
+    setCurrentTest(prevSnapshot.currentTest);
+    setEliminationPathway(prevSnapshot.eliminationPathway);
+    setIsResolved(prevSnapshot.isResolved);
+    setConfirmedCause(prevSnapshot.confirmedCause);
+    setOpenCause(prevSnapshot.openCause);
+  };
+
+  const handleResetDiagnosticLoop = () => {
+    if (!result || initialCausesBackup.length === 0) return;
+    setResult((prev: any) => ({
+      ...prev,
+      ranked_causes: JSON.parse(JSON.stringify(initialCausesBackup)),
+      confirmed_cause: null,
+      elimination_pathway: [],
+    }));
+    setEliminationPathway([]);
+    setHistoryStack([]);
+    setIsResolved(false);
+    setConfirmedCause(null);
+    setCurrentTest(result.initial_test || null);
+    setOpenCause(initialCausesBackup[0]?.id || null);
+  };
+
   const pdf = async () => {
     if (!result) return;
-    const blob = await downloadReport(result);
+    const sessionPayload = {
+      ...result,
+      confirmed_cause: confirmedCause || result.confirmed_cause,
+      elimination_pathway: eliminationPathway.length > 0 ? eliminationPathway : result.elimination_pathway,
+    };
+    const blob = await downloadReport(sessionPayload);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -135,13 +239,13 @@ function TroubleshootInner() {
     [order, answers],
   );
 
-  // Helper for rendering stars
+  // Helper for rendering stars horizontally
   const renderStars = (pct: number) => {
     const score = Math.round(pct / 20); // 0-5 stars
     return (
-      <div style={{ display: 'flex', gap: '2px', justifyContent: 'center' }}>
+      <div style={{ display: 'inline-flex', flexDirection: 'row', gap: '4px', justifyContent: 'center', alignItems: 'center', margin: '4px auto' }}>
         {[1, 2, 3, 4, 5].map((i) => (
-          <span key={i} className={`star ${i <= score ? 'filled' : ''}`}>★</span>
+          <span key={i} className={`star ${i <= score ? 'filled' : ''}`} style={{ display: 'inline-block', lineHeight: 1 }}>★</span>
         ))}
       </div>
     );
@@ -152,54 +256,6 @@ function TroubleshootInner() {
       <h1>Troubleshoot</h1>
       <p>Upload a photo, then answer like an engineer — the next question depends on what you just said.</p>
       {error && <div className="banner warn">{error}</div>}
-
-      {/* Feature 4: Technician Mode Overlay */}
-      {technicianMode && result?.sop_plan && (
-        <div className="technician-modal-overlay">
-          <div className="technician-modal-content">
-            <h2 style={{ fontSize: "2rem", color: "var(--primary)" }}>Live Technician Checklist</h2>
-            <p>Take this tablet to the machine and check off the steps as you complete them.</p>
-            
-            <div style={{ marginTop: "2rem" }}>
-              {result.sop_plan.map((step: any, i: number) => {
-                const stepNum = step.step_number || step.step || (i + 1);
-                const isChecked = !!resolvedSteps[stepNum];
-                return (
-                  <div key={stepNum} className={`technician-step ${isChecked ? 'checked' : ''}`}>
-                    <input 
-                      type="checkbox" 
-                      className="technician-checkbox"
-                      checked={isChecked}
-                      onChange={(e) => setResolvedSteps(prev => ({...prev, [stepNum]: e.target.checked}))}
-                    />
-                    <div>
-                      <h4 style={{ color: isChecked ? "var(--text-muted)" : "var(--text-main)" }}>
-                        Step {stepNum}: {step.action_title || "Check"}
-                      </h4>
-                      <p>{step.action_details || step.instruction}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div style={{ display: "flex", gap: "1rem", marginTop: "2rem" }}>
-              <button 
-                className="btn-primary" 
-                onClick={() => {
-                  setTechnicianMode(false);
-                  setResolvedSteps(prev => ({ ...prev, submit: true }));
-                }}
-              >
-                Submit Resolution & Close
-              </button>
-              <button className="btn-ghost" onClick={() => setTechnicianMode(false)}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="bento-grid" style={{ marginTop: "2rem" }}>
         <div className="col-span-6" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -247,6 +303,96 @@ function TroubleshootInner() {
               </div>
             )}
             {preview && <img src={preview} alt="Dispense" style={{ width: "100%", marginTop: "1rem", borderRadius: "10px" }} />}
+          </section>
+
+          {/* Environmental & Fluid Lifetime Controls */}
+          <section className="env-control-card">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                <span style={{ fontSize: "1.2rem" }}>🌡️</span>
+                <h3 style={{ margin: 0, fontSize: "1.05rem", color: "var(--primary)" }}>Workshop Environment & Rheology</h3>
+              </div>
+              <span className="muted" style={{ fontSize: "0.8rem" }}>Physics-Based Input</span>
+            </div>
+
+            {/* Ambient Temperature Slider & Controls */}
+            <div className="env-slider-group">
+              <div className="env-slider-header">
+                <label style={{ fontSize: "0.88rem", fontWeight: 600 }}>
+                  Ambient Temperature: <span style={{ color: ambientTemp !== 23.0 ? (ambientTemp > 23.0 ? "var(--warning)" : "var(--primary)") : "var(--success)", fontWeight: 800 }}>{ambientTemp.toFixed(1)}°C</span>
+                  {ambientTemp !== 23.0 && (
+                    <span className="muted" style={{ fontSize: "0.8rem", marginLeft: "0.5rem" }}>
+                      ({ambientTemp > 23.0 ? `+${(ambientTemp - 23.0).toFixed(1)}` : (ambientTemp - 23.0).toFixed(1)}°C drift)
+                    </span>
+                  )}
+                </label>
+              </div>
+              <input
+                type="range"
+                min="10.0"
+                max="45.0"
+                step="0.5"
+                value={ambientTemp}
+                onChange={(e) => setAmbientTemp(parseFloat(e.target.value))}
+                style={{ width: "100%", accentColor: "var(--primary)", cursor: "pointer" }}
+              />
+              <div className="env-slider-presets">
+                {[
+                  { label: "❄️ Cold (18°C)", val: 18.0 },
+                  { label: "🟢 Nominal (23°C)", val: 23.0 },
+                  { label: "🔥 Warm (26.5°C)", val: 26.5 },
+                  { label: "🌡️ Peak (30°C)", val: 30.0 },
+                ].map((p) => (
+                  <button
+                    key={p.val}
+                    type="button"
+                    className={`env-preset-btn ${ambientTemp === p.val ? "active" : ""}`}
+                    onClick={() => setAmbientTemp(p.val)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Syringe Pot Life / Open Hours */}
+            <div className="env-slider-group" style={{ marginBottom: 0 }}>
+              <div className="env-slider-header">
+                <label style={{ fontSize: "0.88rem", fontWeight: 600 }}>
+                  Syringe Pot Life (Hours): <span style={{ color: potLife > 6.0 ? "var(--warning)" : "var(--text-main)", fontWeight: 800 }}>{potLife.toFixed(1)}h</span>
+                  {potLife > 6.0 && (
+                    <span style={{ fontSize: "0.78rem", color: "var(--warning)", marginLeft: "0.5rem", fontWeight: 700 }}>
+                      ⚠️ &gt;6h Thixotropic Alert
+                    </span>
+                  )}
+                </label>
+              </div>
+              <input
+                type="range"
+                min="0.0"
+                max="24.0"
+                step="0.5"
+                value={potLife}
+                onChange={(e) => setPotLife(parseFloat(e.target.value))}
+                style={{ width: "100%", accentColor: "var(--secondary)", cursor: "pointer" }}
+              />
+              <div className="env-slider-presets">
+                {[
+                  { label: "⏱️ Fresh (0.5h)", val: 0.5 },
+                  { label: "⏱️ 3.0h", val: 3.0 },
+                  { label: "⚠️ Aged (8.0h)", val: 8.0 },
+                ].map((p) => (
+                  <button
+                    key={p.val}
+                    type="button"
+                    className={`env-preset-btn ${potLife === p.val ? "active" : ""}`}
+                    onClick={() => setPotLife(p.val)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </section>
 
           <section className="card" style={{ background: "linear-gradient(145deg, rgba(20,20,35,0.7) 0%, rgba(10,10,20,0.9) 100%)", borderTop: "4px solid var(--secondary)" }}>
@@ -431,6 +577,304 @@ function TroubleshootInner() {
                 </div>
               )}
 
+              {/* INNOVATIVE FEATURE: Physics-Based Rheology & Thermal Offset Calculator */}
+              {result.rheology && (
+                <div className="rheology-card">
+                  <div className="rheology-header">
+                    <div className="rheology-title">
+                      <span style={{ fontSize: "1.35rem" }}>🌡️</span>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: "1.1rem", color: "var(--primary)" }}>
+                          Physics Rheology & Thermal Offset
+                        </h3>
+                        <span className="muted" style={{ fontSize: "0.8rem" }}>
+                          Arrhenius Viscosity Model & Poiseuille Flow Compensation
+                        </span>
+                      </div>
+                    </div>
+                    <span className={`rheology-status-badge ${result.rheology.risk_level.toLowerCase()}`}>
+                      {result.rheology.risk_level === "OPTIMAL"
+                        ? "🟢 Optimal Nominal"
+                        : result.rheology.risk_level === "MODERATE_DRIFT"
+                        ? "🟡 Moderate Thermal Drift"
+                        : "🔴 High Thermal Drift"}
+                    </span>
+                  </div>
+
+                  {result.rheology.is_clamped && (
+                    <div className="safety-guard-pill">
+                      🛡️ Safety Boundary Guard: Input values safely clamped to factory operating window (10°C–45°C, ±30% max offset).
+                    </div>
+                  )}
+
+                  {/* Rheology Quantitative Metrics */}
+                  <div className="rheology-grid">
+                    <div className="rheology-stat-box">
+                      <span className="rheology-stat-label">Workshop Temp</span>
+                      <div className="rheology-stat-val">
+                        {result.rheology.ambient_temp_c}°C
+                      </div>
+                      <span className="rheology-stat-sub">
+                        {result.rheology.delta_t_c >= 0 ? `+${result.rheology.delta_t_c}` : result.rheology.delta_t_c}°C vs 23°C baseline
+                      </span>
+                    </div>
+
+                    <div className="rheology-stat-box">
+                      <span className="rheology-stat-label">Viscosity Drift (Δη)</span>
+                      <div
+                        className="rheology-stat-val"
+                        style={{
+                          color:
+                            result.rheology.viscosity_drift_pct < -5
+                              ? "var(--danger)"
+                              : result.rheology.viscosity_drift_pct > 5
+                              ? "var(--warning)"
+                              : "var(--success)",
+                        }}
+                      >
+                        {result.rheology.viscosity_drift_pct >= 0 ? `+${result.rheology.viscosity_drift_pct}` : result.rheology.viscosity_drift_pct}%
+                      </div>
+                      <span className="rheology-stat-sub">
+                        Ratio: {result.rheology.viscosity_ratio}x ({result.rheology.viscosity_drift_pct < 0 ? "Fluid thinned" : result.rheology.viscosity_drift_pct > 0 ? "Fluid thickened" : "Nominal"})
+                      </span>
+                    </div>
+
+                    <div className="rheology-stat-box">
+                      <span className="rheology-stat-label">Pressure Offset (ΔP)</span>
+                      <div className="rheology-stat-val" style={{ color: "var(--primary)" }}>
+                        {result.rheology.pressure_offset_mpa >= 0 ? `+${result.rheology.pressure_offset_mpa}` : result.rheology.pressure_offset_mpa} MPa
+                      </div>
+                      <span className="rheology-stat-sub">
+                        {result.rheology.pressure_offset_pct >= 0 ? `+${result.rheology.pressure_offset_pct}` : result.rheology.pressure_offset_pct}% pneumatic compensation
+                      </span>
+                    </div>
+
+                    <div className="rheology-stat-box">
+                      <span className="rheology-stat-label">Tip Heater Offset</span>
+                      <div className="rheology-stat-val" style={{ color: "var(--secondary)" }}>
+                        {result.rheology.heater_offset_c > 0 ? `+${result.rheology.heater_offset_c}` : result.rheology.heater_offset_c}°C
+                      </div>
+                      <span className="rheology-stat-sub">
+                        Thermal nozzle offset
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Machine Parameter Compensation Action */}
+                  <div className="compensation-action-card">
+                    <div className="compensation-action-title">
+                      ⚙️ Machine Parameter Compensation Recommendation
+                    </div>
+                    <div className="compensation-action-detail">
+                      {result.rheology.pressure_offset_mpa < 0 ? (
+                        <>
+                          <strong>Reduce dispense pressure by {Math.abs(result.rheology.pressure_offset_mpa).toFixed(4)} MPa ({Math.abs(result.rheology.pressure_offset_pct)}%)</strong> to compensate for thermal viscosity thinning and prevent dot slump or line bleed.
+                        </>
+                      ) : result.rheology.pressure_offset_mpa > 0 ? (
+                        <>
+                          <strong>Increase dispense pressure by +{result.rheology.pressure_offset_mpa.toFixed(4)} MPa (+{result.rheology.pressure_offset_pct}%)</strong> to overcome fluid thickening caused by cool cleanroom conditions.
+                        </>
+                      ) : (
+                        <>
+                          <strong>Fluid viscosity is nominal.</strong> Maintain standard pneumatic baseline pressure (0.200 MPa).
+                        </>
+                      )}
+                      {result.rheology.heater_offset_c !== 0 && (
+                        <span style={{ display: "block", marginTop: "0.4rem" }}>
+                          Optional nozzle heater trim: Adjust tip heater setpoint by {result.rheology.heater_offset_c > 0 ? `+${result.rheology.heater_offset_c}` : result.rheology.heater_offset_c}°C.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Thixotropic Purge Alert */}
+                  {result.rheology.thixotropic_alert && (
+                    <div className="thixotropic-banner">
+                      <span style={{ fontSize: "1.3rem" }}>⚠️</span>
+                      <div>
+                        <strong>Thixotropic Restructuring Warning:</strong>
+                        <p style={{ margin: "0.25rem 0 0 0" }}>{result.rheology.thixotropic_alert}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* INNOVATIVE FEATURE: Interactive Elimination Tree & Counter-Test Loop */}
+              <div className="diff-panel" style={{ marginTop: "1.5rem" }}>
+                <div className="diff-header">
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <span style={{ fontSize: "1.3rem" }}>🩺</span>
+                      <h3 style={{ margin: 0, fontSize: "1.15rem", color: "var(--primary)" }}>
+                        Differential Diagnosis & Counter-Test Loop
+                      </h3>
+                    </div>
+                    <p className="muted" style={{ fontSize: "0.85rem", marginTop: "0.2rem" }}>
+                      Active hypothesis elimination with live Bayesian confidence re-scoring
+                    </p>
+                  </div>
+                  
+                  <div className="undo-reset-toolbar">
+                    <button 
+                      onClick={handleUndoStep} 
+                      disabled={historyStack.length === 0 || verifying}
+                      title="Revert previous test outcome and restore confidence distribution"
+                    >
+                      ↩️ Undo Step
+                    </button>
+                    <button 
+                      onClick={handleResetDiagnosticLoop} 
+                      disabled={eliminationPathway.length === 0 || verifying}
+                      title="Reset elimination tree back to initial diagnosis"
+                    >
+                      🔄 Reset Loop
+                    </button>
+                  </div>
+                </div>
+
+                {isResolved ? (
+                  <div className="banner ok" style={{ flexDirection: "column", alignItems: "flex-start", gap: "0.75rem", padding: "1.25rem", borderRadius: "var(--radius-md)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <span style={{ fontSize: "1.5rem" }}>🎉</span>
+                      <strong style={{ fontSize: "1.1rem" }}>
+                        Root Cause Confirmed: {pretty(confirmedCause || result.ranked_causes?.[0]?.name)}
+                      </strong>
+                    </div>
+                    <p style={{ margin: 0, fontSize: "0.9rem" }}>
+                      Verification test succeeded. Issue resolution path recorded into historical audit database.
+                    </p>
+                    <button className="btn-primary" onClick={pdf} style={{ alignSelf: "flex-start", marginTop: "0.5rem" }}>
+                      📄 Download Confirmed Resolution Report
+                    </button>
+                  </div>
+                ) : currentTest?.action_type === "ESCALATE" ? (
+                  <div className="fae-escalation-alert">
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.5rem" }}>
+                      <span style={{ fontSize: "1.5rem" }}>🚨</span>
+                      <strong style={{ color: "var(--danger)", fontSize: "1.1rem" }}>
+                        {currentTest.title}
+                      </strong>
+                    </div>
+                    <p style={{ fontSize: "0.95rem", marginBottom: "1rem", color: "var(--text-main)" }}>
+                      {currentTest.instruction}
+                    </p>
+                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                      <button className="btn-primary" style={{ background: "var(--danger)", borderColor: "var(--danger)", color: "#fff" }} onClick={pdf}>
+                        📋 Export FAE Diagnostic Packet (PDF)
+                      </button>
+                      <button className="btn-ghost" onClick={handleResetDiagnosticLoop}>
+                        🔄 Restart Automated Checks
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Leading Hypothesis Card */}
+                    {result.ranked_causes?.[0] && (
+                      <div className="hypothesis-lead-card">
+                        <div className="hypothesis-lead-info">
+                          <span style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", fontWeight: 700 }}>
+                            Target Hypothesis (Rank #1)
+                          </span>
+                          <strong style={{ fontSize: "1.15rem", color: "var(--text-main)" }}>
+                            {result.ranked_causes[0].name}
+                          </strong>
+                          <span className="muted" style={{ fontSize: "0.85rem" }}>
+                            {result.ranked_causes[0].family_label || result.ranked_causes[0].category}
+                          </span>
+                        </div>
+                        <div className="hypothesis-confidence-pill">
+                          {result.ranked_causes[0].likelihood_pct}%
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Low-Cost Action Prompt Card */}
+                    {currentTest && (
+                      <div className="counter-test-card">
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span className="cost-tag">{currentTest.cost_badge}</span>
+                          <span className="muted" style={{ fontSize: "0.8rem" }}>Recommended Low-Cost Test</span>
+                        </div>
+                        <h4 style={{ margin: 0, fontSize: "1.05rem", color: "var(--primary)" }}>
+                          {currentTest.title}
+                        </h4>
+                        <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.5, color: "var(--text-main)" }}>
+                          {currentTest.instruction}
+                        </p>
+                        {currentTest.expected_resolved && (
+                          <div style={{ background: "rgba(0,0,0,0.25)", padding: "0.75rem", borderRadius: "var(--radius-sm)", borderLeft: "3px solid var(--success)", fontSize: "0.85rem" }}>
+                            <strong style={{ color: "var(--success)" }}>Expected Outcome:</strong> {currentTest.expected_resolved}
+                          </div>
+                        )}
+
+                        {/* 3 Quick Feedback Action Buttons */}
+                        <div className="test-feedback-btn-group">
+                          <button
+                            className="btn-feedback btn-feedback-resolved"
+                            disabled={verifying}
+                            onClick={() => handleCounterTestFeedback("resolved")}
+                          >
+                            <span>🟢 Resolved</span>
+                          </button>
+                          <button
+                            className="btn-feedback btn-feedback-shifted"
+                            disabled={verifying}
+                            onClick={() => handleCounterTestFeedback("shifted")}
+                          >
+                            <span>🟡 Shifted</span>
+                          </button>
+                          <button
+                            className="btn-feedback btn-feedback-unresolved"
+                            disabled={verifying}
+                            onClick={() => handleCounterTestFeedback("unresolved")}
+                          >
+                            <span>🔴 Unresolved</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Elimination Audit Trail */}
+                {eliminationPathway.length > 0 && (
+                  <div style={{ marginTop: "1.25rem" }}>
+                    <h5 style={{ margin: "0 0 0.5rem 0", color: "var(--text-muted)", fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                      Elimination Pathway ({eliminationPathway.length} Step{eliminationPathway.length > 1 ? "s" : ""})
+                    </h5>
+                    <div className="elimination-timeline">
+                      {eliminationPathway.map((step: any, idx: number) => {
+                        const isElim = step.status === "ELIMINATED";
+                        const isConf = step.status === "CONFIRMED";
+                        return (
+                          <div 
+                            key={idx} 
+                            className={`elimination-step-node ${isElim ? "eliminated" : isConf ? "confirmed" : "shifted"}`}
+                          >
+                            <span style={{ fontWeight: 800, minWidth: "20px" }}>{idx + 1}.</span>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                                <span style={{ fontWeight: 700, color: isElim ? "var(--danger)" : isConf ? "var(--success)" : "var(--warning)" }}>
+                                  {isElim ? "❌ ELIMINATED" : isConf ? "✅ CONFIRMED" : "🟡 SHIFTED"}
+                                </span>
+                                <span className={isElim ? "eliminated-cause-name" : ""}>
+                                  {step.target_cause_name}
+                                </span>
+                              </div>
+                              <div className="muted" style={{ fontSize: "0.8rem", marginTop: "0.15rem" }}>
+                                {step.summary || `Tested via ${step.test_title}`}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <h3 style={{ marginTop: "1.5rem" }}>AI Likelihood Score</h3>
               <div className="banner info">{result.reasoning_chain || result.explanation}</div>
 
@@ -459,24 +903,7 @@ function TroubleshootInner() {
                 </details>
               ))}
 
-              <h3 style={{ marginTop: "2rem", marginBottom: "0.5rem", color: "var(--primary)" }}>Recommended Action Plan</h3>
-              
-              {/* Feature 4: Start Technician Mode Button */}
-              {result.sop_plan?.length > 0 && (
-                <button 
-                  className="btn-primary" 
-                  style={{ width: "100%", marginBottom: "1.5rem", padding: "1.2rem", background: "var(--bg-gradient-start)", border: "1px solid var(--primary)", color: "var(--primary)" }}
-                  onClick={() => setTechnicianMode(true)}
-                >
-                  📱 Start Live Technician Checklist Mode
-                </button>
-              )}
-
-              {resolvedSteps.submit && (
-                <div className="banner ok" style={{ marginBottom: "1rem", fontWeight: "bold", fontSize: "1.1rem", justifyContent: "center" }}>
-                  🎉 Issue Resolution Submitted to Database! Great job.
-                </div>
-              )}
+              <h3 style={{ marginTop: "2rem", marginBottom: "1rem", color: "var(--primary)" }}>Recommended Action Plan</h3>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                 {(result.sop_plan || result.action_plan)?.map((step: any, i: number) => {
@@ -492,7 +919,7 @@ function TroubleshootInner() {
                       }}
                     >
                       <h4 style={{ margin: "0 0 0.5rem 0", color: "var(--text-main)" }}>
-                        Step {stepNum}: {step.action_title || "Check"}
+                        Step {stepNum}: {step.action_title && !step.action_title.startsWith("Step ") ? step.action_title : (step.target_cause && step.target_cause !== "System Detected" ? pretty(step.target_cause) : (step.instruction || step.action_details || "").slice(0, 35) + "...")}
                       </h4>
                       <p style={{ marginBottom: "0.5rem", fontSize: "0.95rem" }}>{step.action_details || step.instruction}</p>
                     </div>
