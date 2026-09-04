@@ -7,6 +7,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from backend.app.reasoning.fuzzy import (
+    EVIDENCE_FIRE,
+    QUESTION_FIRE,
+    UNKNOWN_MU,
+    blend_factor,
+    when_strength,
+)
+from backend.app.reasoning.rheology import calculate_rheology_offset
+
 RULES_PATH = (
     Path(__file__).resolve().parents[3] / "research" / "cause_ranking_rules.json"
 )
@@ -18,6 +27,9 @@ AMOUNT_TO_DEFECT = {
     "inconsistent": "inconsistent_volume",
     "spreading": "spreading",
     "irregular": "air_bubble_irregular",
+    "stringing": "air_bubble_irregular",
+    "misaligned": "inconsistent_volume",
+    "broken_line": "missing",
 }
 
 CLOG_CAUSES = {"nozzle_partial_clog", "powder_nozzle_mismatch"}
@@ -26,12 +38,118 @@ SPREAD_CAUSES = {"viscosity_temp_humidity", "pressure_time_high"}
 
 LOW_VISION_CONFIDENCE = 0.45
 
+SCORE_FORMULA = (
+    "Score(cause) = material×defect baseline × fuzzy multipliers "
+    "+ Σ (symptom evidence × μ). μ is 1 for a crisp match, ~0.45 for 'unknown', "
+    "and a similarity for overlapping defect looks. Likelihoods then sum to 100%."
+)
+
 
 @lru_cache(maxsize=1)
 def load_rules(path: str | None = None) -> dict[str, Any]:
     rules_file = Path(path) if path else RULES_PATH
     with rules_file.open(encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def _when_matches(when: dict[str, Any], symptoms: dict[str, Any]) -> bool:
+    return when_strength(when, symptoms) >= 0.999
+
+
+def _family_for(cause_id: str, rules: dict[str, Any]) -> tuple[str, str]:
+    for family_id, meta in (rules.get("cause_families") or {}).items():
+        if cause_id in meta.get("causes", []):
+            return family_id, meta.get("label", family_id)
+    return "other", "Other"
+
+
+def _apply_evidence(
+    weights: dict[str, float],
+    symptoms: dict[str, Any],
+    rules: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
+    """Additive evidence scaled by fuzzy membership: Score += delta × μ."""
+    by_cause: dict[str, list[dict[str, Any]]] = {cid: [] for cid in weights}
+    for rule in rules.get("evidence_rules", []):
+        mu = when_strength(rule.get("when", {}), symptoms)
+        if mu < EVIDENCE_FIRE:
+            continue
+        label = rule.get("label", rule["id"])
+        for cause_id, delta in (rule.get("add") or {}).items():
+            if cause_id not in weights:
+                continue
+            scaled = float(delta) * mu
+            weights[cause_id] = max(0.01, weights[cause_id] + scaled)
+            by_cause[cause_id].append(
+                {
+                    "rule_id": rule["id"],
+                    "label": label,
+                    "delta": scaled,
+                    "membership": round(mu, 3),
+                }
+            )
+    return by_cause
+
+
+def build_reasoning_chain(result: dict[str, Any], symptoms: dict[str, Any] | None = None) -> str:
+    """Human WHY paragraph. Ranking must already be attached."""
+    ranked = result.get("ranked_causes") or []
+    if not ranked:
+        return "Not enough symptoms to rank a cause."
+    symptoms = symptoms or result.get("symptoms") or {}
+    rules = load_rules()
+    top = ranked[0]
+    mechanisms = rules.get("mechanisms") or {}
+    display_pct = top.get("match_score")
+    if display_pct is None:
+        display_pct = top.get("likelihood_pct", 0)
+    family = top.get("family_label") or top.get("name")
+    bits: list[str] = []
+    for item in top.get("evidence") or []:
+        if item.get("delta", 0) > 0:
+            bits.append(str(item.get("label", "")).replace("Matched ", "").rstrip("."))
+    if symptoms.get("recent_change") in (None, "none"):
+        bits.append("no process parameters were recently modified")
+    if not bits:
+        for rule in result.get("fired_rules") or []:
+            text = (rule.get("explain") or "").strip()
+            if text:
+                bits.append(text.rstrip("."))
+                if len(bits) >= 2:
+                    break
+    if len(bits) == 1:
+        because = bits[0]
+    elif len(bits) == 2:
+        because = f"{bits[0]}, and {bits[1]}"
+    else:
+        because = ", ".join(bits[:-1]) + f", and {bits[-1]}" if bits else "the reported symptoms match this failure mode"
+    mechanism = mechanisms.get(top["id"], top["name"].lower())
+    chain = (
+        f"{family} is ranked as the highest possible cause ({display_pct:.0f}%) because "
+        f"{because}. This closely matches the behavior of {mechanism}."
+    )
+    if len(ranked) > 1:
+        second = ranked[1]
+        second_bits = []
+        for item in second.get("evidence") or []:
+            delta = item.get("delta", 0)
+            label = str(item.get("label", "")).replace("Matched ", "").rstrip(".")
+            if delta > 0:
+                second_bits.append((0, f"{label} (+{delta:.0f}%)"))
+            elif delta < 0:
+                second_bits.append((1, f"{label} ({delta:.0f}%)"))
+        extra = ""
+        if second_bits:
+            second_bits.sort(key=lambda row: row[0])
+            extra = " because " + ", and ".join(bit for _, bit in second_bits[:2])
+        second_pct = second.get("match_score")
+        if second_pct is None:
+            second_pct = second.get("likelihood_pct", 0)
+        chain += (
+            f" {second.get('family_label') or second['name']} is next "
+            f"({second_pct:.0f}%){extra}."
+        )
+    return chain
 
 
 def _renormalize(weights: dict[str, float]) -> dict[str, float]:
@@ -154,19 +272,72 @@ def rank_causes(symptoms: dict[str, Any], rules_path: str | None = None) -> dict
 
     _apply_multipliers(weights, rules.get("pattern_multipliers", {}).get(pattern, {}))
 
-    answers = {
-        "frequency": symptoms.get("frequency"),
-        "recent_change": symptoms.get("recent_change"),
-        "location": symptoms.get("location"),
-        "timing": symptoms.get("timing"),
-        "uv_barrel": symptoms.get("uv_barrel"),
-        "mix_state": symptoms.get("mix_state"),
-    }
     for rule in rules["adjustment_rules"]:
         when = rule.get("when", {})
-        if all(answers.get(k) == v for k, v in when.items()):
-            _apply_multipliers(weights, rule.get("multiply", {}))
-            fired.append({"id": rule["id"], "explain": rule["explain"]})
+        mu = when_strength(when, symptoms)
+        if mu < EVIDENCE_FIRE:
+            continue
+        blended = {cid: blend_factor(factor, mu) for cid, factor in (rule.get("multiply") or {}).items()}
+        _apply_multipliers(weights, blended)
+        note = rule["explain"]
+        if mu < 0.999:
+            note = f"{note} (fuzzy μ={mu:.2f})"
+        fired.append({"id": rule["id"], "explain": note, "membership": round(mu, 3)})
+
+    evidence_by_cause = _apply_evidence(weights, symptoms, rules)
+
+    # Physical Rheology & Thermal Offset evaluation
+    rheology = calculate_rheology_offset(
+        material=material,
+        ambient_temp_c=symptoms.get("ambient_temp_c"),
+        pot_life_hours=symptoms.get("pot_life_hours"),
+    )
+    if rheology["viscosity_drift_pct"] <= -6.0:
+        for cid, delta in [("viscosity_temp_humidity", 15.0), ("pressure_time_high", 10.0)]:
+            if cid in weights:
+                weights[cid] = weights.get(cid, 1.0) + delta
+                evidence_by_cause.setdefault(cid, []).append({
+                    "rule_id": "thermal_thinning_drift",
+                    "label": f"Ambient warm drift +{rheology['delta_t_c']}°C (Viscosity {rheology['viscosity_drift_pct']}%)",
+                    "delta": delta,
+                    "membership": 1.0,
+                })
+        fired.append({
+            "id": "thermal_thinning_drift",
+            "explain": f"Ambient temp is +{rheology['delta_t_c']}°C above baseline; viscosity drops {rheology['viscosity_drift_pct']}%.",
+            "membership": 1.0,
+        })
+    elif rheology["viscosity_drift_pct"] >= 6.0:
+        for cid, delta in [("viscosity_temp_humidity", 15.0), ("nozzle_partial_clog", 10.0), ("pressure_time_low", 8.0)]:
+            if cid in weights:
+                weights[cid] = weights.get(cid, 1.0) + delta
+                evidence_by_cause.setdefault(cid, []).append({
+                    "rule_id": "thermal_thickening_drift",
+                    "label": f"Ambient cold drift {rheology['delta_t_c']}°C (Viscosity +{rheology['viscosity_drift_pct']}%)",
+                    "delta": delta,
+                    "membership": 1.0,
+                })
+        fired.append({
+            "id": "thermal_thickening_drift",
+            "explain": f"Ambient temp is {rheology['delta_t_c']}°C below baseline; viscosity rises +{rheology['viscosity_drift_pct']}%.",
+            "membership": 1.0,
+        })
+
+    if rheology["pot_life_hours"] > 6.0:
+        for cid in ["powder_oxidation", "flux_metal_separation", "filler_settling"]:
+            if cid in weights:
+                weights[cid] = weights.get(cid, 1.0) + 12.0
+                evidence_by_cause.setdefault(cid, []).append({
+                    "rule_id": "pot_life_exceeded",
+                    "label": f"Fluid open lifetime exceeds {rheology['pot_life_hours']}h",
+                    "delta": 12.0,
+                    "membership": 1.0,
+                })
+        fired.append({
+            "id": "pot_life_exceeded",
+            "explain": f"Syringe open lifetime is {rheology['pot_life_hours']}h (> 6h standard).",
+            "membership": 1.0,
+        })
 
     weights = _renormalize(weights)
 
@@ -193,12 +364,20 @@ def rank_causes(symptoms: dict[str, Any], rules_path: str | None = None) -> dict
     causes_out = []
     for cause_id, pct in ranked:
         meta = rules["causes"][cause_id]
+        family_id, family_label = _family_for(cause_id, rules)
+        evidence = evidence_by_cause.get(cause_id) or []
+        match_score = int(round(sum(item["delta"] for item in evidence)))
+        match_score = max(0, min(99, match_score))
         causes_out.append(
             {
                 "id": cause_id,
                 "name": meta["name"],
                 "category": meta["category"],
+                "family": family_id,
+                "family_label": family_label,
                 "likelihood_pct": round(pct, 1),
+                "match_score": match_score,
+                "evidence": evidence,
                 "cost_rank": meta["cost_rank"],
                 "check": meta["check"],
             }
@@ -206,6 +385,19 @@ def rank_causes(symptoms: dict[str, Any], rules_path: str | None = None) -> dict
 
     action_plan = generate_action_plan(causes_out)
     warnings = rules.get("downstream_warnings", {}).get(defect, [])
+    family_scores: dict[str, float] = {}
+    family_labels: dict[str, str] = {}
+    for cause in causes_out:
+        family_scores[cause["family"]] = family_scores.get(cause["family"], 0.0) + cause["likelihood_pct"]
+        family_labels[cause["family"]] = cause["family_label"]
+    family_ranked = [
+        {
+            "id": fid,
+            "label": family_labels[fid],
+            "likelihood_pct": round(pct, 1),
+        }
+        for fid, pct in sorted(family_scores.items(), key=lambda item: item[1], reverse=True)
+    ]
     pattern_names = {
         "under_dispense": {"dot": "undersized_dot", "line": "thin_or_broken_line", "dam_fill": "low_dam_or_incomplete_fill"},
         "over_dispense": {"dot": "oversized_dot", "line": "thick_line", "dam_fill": "overflow_fill"},
@@ -215,7 +407,7 @@ def rank_causes(symptoms: dict[str, Any], rules_path: str | None = None) -> dict
         "air_bubble_irregular": {"dot": "satellite_or_voided_dot", "line": "voids_or_ragged_edge", "dam_fill": "void_in_fill"},
     }
 
-    return {
+    payload = {
         "defect_class": defect,
         "pattern_specific_name": pattern_names.get(defect, {}).get(pattern, defect),
         "material": material,
@@ -226,7 +418,18 @@ def rank_causes(symptoms: dict[str, Any], rules_path: str | None = None) -> dict
         "downstream_warnings": warnings,
         "manual_review": manual_review,
         "vision_confidence": vision_conf,
+        "score_formula": SCORE_FORMULA,
+        "family_ranked": family_ranked,
+        "rheology": rheology,
+        "symptoms": dict(symptoms),
+        "fuzzy": {
+            "question_fire": QUESTION_FIRE,
+            "evidence_fire": EVIDENCE_FIRE,
+            "unknown_mu": UNKNOWN_MU,
+        },
     }
+    payload["reasoning_chain"] = build_reasoning_chain(payload, symptoms)
+    return payload
 
 
 def generate_action_plan(ranked_causes: list[dict[str, Any]], top_n: int = 5) -> list[dict[str, Any]]:
@@ -262,14 +465,20 @@ def generate_action_plan(ranked_causes: list[dict[str, Any]], top_n: int = 5) ->
 
 
 def explain_rules(result: dict[str, Any]) -> str:
-    """Deterministic fallback explanation (LLM wraps this on Day 10)."""
-    top = result["ranked_causes"][:3]
+    """Deterministic WHY text: reasoning chain first, then supporting rules."""
     lines = [
+        result.get("reasoning_chain") or build_reasoning_chain(result),
         f"Most likely defect: {result['pattern_specific_name']} "
-        f"({result['defect_class']}) on {result['material']} / {result['pattern']}."
+        f"({result['defect_class']}) on {result['material']} / {result['pattern']}.",
     ]
+    top = result.get("ranked_causes") or []
     if top:
-        names = ", ".join(f"{c['name']} ({c['likelihood_pct']:.0f}%)" for c in top)
+        names = ", ".join(
+            f"{c['name']} ({c['likelihood_pct']:.0f}% likelihood"
+            + (f", {c['match_score']} symptom match" if c.get("evidence") else "")
+            + ")"
+            for c in top[:3]
+        )
         lines.append(f"Top ranked causes: {names}.")
     for rule in result.get("fired_rules", []):
         lines.append(f"- {rule['explain']}")

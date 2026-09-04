@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS cases (
     ranked_causes_json TEXT,
     confirmed_cause TEXT,
     explanation TEXT,
+    elimination_pathway_json TEXT,
+    is_resolved INTEGER DEFAULT 0,
+    resolution_timestamp TEXT,
+    operator_notes TEXT,
     created_at TEXT NOT NULL
 );
 """
@@ -57,6 +61,18 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute(SCHEMA)
+    # Ensure migrations if table existed previously
+    for col, col_type in [
+        ("elimination_pathway_json", "TEXT"),
+        ("is_resolved", "INTEGER DEFAULT 0"),
+        ("resolution_timestamp", "TEXT"),
+        ("operator_notes", "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE cases ADD COLUMN {col} {col_type}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
     return conn
 
 
@@ -94,11 +110,12 @@ def seed_if_empty(db_path: Path | None = None) -> int:
 def log_case(payload: dict[str, Any], db_path: Path | None = None) -> str:
     session_id = payload.get("session_id") or uuid.uuid4().hex
     conn = connect(db_path)
+    elimination = payload.get("elimination_pathway") or payload.get("elimination_pathway_json")
     conn.execute(
         """INSERT INTO cases
            (session_id, material, pattern, defect_class, symptoms_json,
-            ranked_causes_json, confirmed_cause, explanation, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ranked_causes_json, confirmed_cause, explanation, elimination_pathway_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             session_id,
             payload.get("material"),
@@ -108,12 +125,75 @@ def log_case(payload: dict[str, Any], db_path: Path | None = None) -> str:
             json.dumps(payload.get("ranked_causes", []), default=str),
             payload.get("confirmed_cause"),
             payload.get("explanation"),
+            json.dumps(elimination, default=str) if elimination else None,
             datetime.now(timezone.utc).isoformat(),
         ),
     )
     conn.commit()
     conn.close()
     return session_id
+
+
+def update_case_resolution(
+    session_id: str,
+    confirmed_cause: str,
+    elimination_pathway: list[dict[str, Any]],
+    db_path: Path | None = None,
+) -> bool:
+    """Updates a case with confirmed cause and the complete elimination pathway."""
+    conn = connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        """UPDATE cases
+           SET confirmed_cause = ?, elimination_pathway_json = ?
+           WHERE session_id = ?""",
+        (confirmed_cause, json.dumps(elimination_pathway, default=str), session_id),
+    )
+    updated = cur.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def get_case_by_session_id(session_id: str, db_path: Path | None = None) -> dict[str, Any] | None:
+    """Retrieve full case record by session_id."""
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM cases WHERE session_id = ?", (session_id,)).fetchone()
+    conn.close()
+    if not row:
+        return None
+    data = dict(row)
+    for field in ["symptoms_json", "ranked_causes_json", "elimination_pathway_json"]:
+        if data.get(field):
+            try:
+                data[field.replace("_json", "")] = json.loads(data[field])
+            except Exception:
+                pass
+    return data
+
+
+def update_case_feedback(
+    session_id: str,
+    status: str,
+    confirmed_cause: str,
+    operator_notes: str | None = None,
+    db_path: Path | None = None,
+) -> bool:
+    """Updates a case with mobile shop-floor ground-truth feedback."""
+    conn = connect(db_path)
+    cur = conn.cursor()
+    is_resolved = 1 if status.upper() in {"RESOLVED", "OK", "CONFIRMED"} else 0
+    now = datetime.now(timezone.utc).isoformat()
+    cur.execute(
+        """UPDATE cases
+           SET is_resolved = ?, confirmed_cause = ?, operator_notes = ?, resolution_timestamp = ?
+           WHERE session_id = ?""",
+        (is_resolved, confirmed_cause, operator_notes or "", now, session_id),
+    )
+    updated = cur.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
 
 
 def similar_cases(material: str, defect_class: str, db_path: Path | None = None) -> dict[str, Any]:

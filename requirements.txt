@@ -19,9 +19,6 @@ torchvision>=0.17.0
 reportlab>=4.1.0
 sqlalchemy>=2.0.25
 
-# Frontend (fastest path for a 20-day demo)
-streamlit>=1.32.0
-
 # Tests
 pytest>=8.0.0
 
