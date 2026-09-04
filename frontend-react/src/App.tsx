@@ -13,21 +13,33 @@ function App() {
         {/* Header Navbar */}
         <header className="app-header">
           <div className="brand-section">
-            <h1 className="brand">Defect Detective</h1>
-            <span className="brand-sub">NSW Automation</span>
+            <div className="brand-logo-badge">⚡</div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <h1 className="brand">Defect Detective</h1>
+                <span className="brand-sub">NSW Automation</span>
+              </div>
+            </div>
           </div>
           
-          <nav className="nav-links">
-            <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-              Dashboard
-            </NavLink>
-            <NavLink to="/troubleshoot" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-              Troubleshoot
-            </NavLink>
-            <NavLink to="/history" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-              Case History
-            </NavLink>
-          </nav>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+            <div className="system-status-indicator">
+              <span className="status-dot"></span>
+              <span>SYSTEM ONLINE</span>
+            </div>
+
+            <nav className="nav-links">
+              <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                Dashboard
+              </NavLink>
+              <NavLink to="/troubleshoot" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                Troubleshoot
+              </NavLink>
+              <NavLink to="/history" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                Case History
+              </NavLink>
+            </nav>
+          </div>
         </header>
 
         {/* Main Content Area */}
@@ -42,12 +54,12 @@ function App() {
 
         {/* Footer */}
         <footer className="app-footer">
-          <p>
-            <strong>NSW 5× rule:</strong> Nozzle ID ≥ 5× largest powder particle.
-          </p>
-          <p className="muted">
-            Ranking is rule-based, not a generic chatbot. AI Horizon 2026.
-          </p>
+          <div>
+            <strong>NSW 5× Rule Engine:</strong> Nozzle ID ≥ 5× largest powder particle size.
+          </div>
+          <div className="muted mono" style={{ fontSize: '0.78rem' }}>
+            Deterministic Physics & Bayesian Inference Engine · AI Horizon Solution Challenge 2026
+          </div>
         </footer>
 
       </div>

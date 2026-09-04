@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef, Suspense } from "react";
 import { downloadReport, fetchMeta, postCounterTestVerify, postDiscover, postSession, sampleUrl } from "../lib/api";
 import { DEMO_PRESET, FOLLOWUP_KEYS, pretty } from "../lib/content";
 
@@ -11,7 +11,7 @@ function TroubleshootInner() {
   const [progress, setProgress] = useState<any>(null);
   const [complete, setComplete] = useState(false);
   const [useLlm, setUseLlm] = useState(false);
-  const [trainingMode, setTrainingMode] = useState(false); // Feature 1
+  const [trainingMode, setTrainingMode] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
@@ -35,6 +35,8 @@ function TroubleshootInner() {
   const [verifying, setVerifying] = useState(false);
   const [initialCausesBackup, setInitialCausesBackup] = useState<any[]>([]);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const refreshQuestion = useCallback(async (nextAnswers: Record<string, any>, llm = useLlm) => {
     const payload = { ...nextAnswers, use_llm: llm, include_optional: true };
     const res = await postDiscover(payload);
@@ -44,6 +46,15 @@ function TroubleshootInner() {
     setAnswers(res.answers || nextAnswers);
     return res;
   }, [useLlm]);
+
+  const loadDemo = useCallback(async () => {
+    const { sample_image, ...rest } = DEMO_PRESET;
+    setSample(sample_image);
+    setPreview(sampleUrl(sample_image));
+    setOrder(Object.keys(rest));
+    setNozzle(rest.nozzle_id_um || 60);
+    await refreshQuestion(rest);
+  }, [refreshQuestion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,11 +68,7 @@ function TroubleshootInner() {
       const demo = new URLSearchParams(window.location.search).get("demo") === "1";
       try {
         if (demo) {
-          const { sample_image, ...rest } = DEMO_PRESET;
-          setSample(sample_image);
-          setPreview(sampleUrl(sample_image));
-          setOrder(Object.keys(rest));
-          await refreshQuestion(rest);
+          await loadDemo();
         } else {
           await refreshQuestion({});
         }
@@ -72,8 +79,7 @@ function TroubleshootInner() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadDemo, refreshQuestion]);
 
   const commit = async (qid: string, value: any) => {
     const next = { ...answers, [qid]: value };
@@ -135,7 +141,7 @@ function TroubleshootInner() {
       setCurrentTest(res.initial_test || null);
       setInitialCausesBackup(res.ranked_causes ? JSON.parse(JSON.stringify(res.ranked_causes)) : []);
     } catch (err: any) {
-      setError(err.message || "Analyse failed");
+      setError(err.message || "Analysis failed");
     } finally {
       setAnalyzing(false);
     }
@@ -145,7 +151,6 @@ function TroubleshootInner() {
     if (!currentTest || !result || verifying) return;
     setVerifying(true);
     try {
-      // Push state snapshot for 1-Click Undo
       const snapshot = {
         ranked_causes: JSON.parse(JSON.stringify(result.ranked_causes || [])),
         currentTest: { ...currentTest },
@@ -230,8 +235,11 @@ function TroubleshootInner() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "dispense-troubleshooting-report.pdf";
+    a.download = `nsw-dispense-report-${result.session_id || "diagnostic"}.pdf`;
+    document.body.appendChild(a);
     a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   const history = useMemo(
@@ -239,594 +247,615 @@ function TroubleshootInner() {
     [order, answers],
   );
 
-  // Helper for rendering stars horizontally
-  const renderStars = (pct: number) => {
-    const score = Math.round(pct / 20); // 0-5 stars
-    return (
-      <div style={{ display: 'inline-flex', flexDirection: 'row', gap: '4px', justifyContent: 'center', alignItems: 'center', margin: '4px auto' }}>
-        {[1, 2, 3, 4, 5].map((i) => (
-          <span key={i} className={`star ${i <= score ? 'filled' : ''}`} style={{ display: 'inline-block', lineHeight: 1 }}>★</span>
-        ))}
-      </div>
-    );
-  };
+  // NSW 5x rule violation check
+  const isNswRuleViolation = 
+    (answers.material === "solder_paste" || !answers.material) &&
+    ((answers.nozzle_id_um && Number(answers.nozzle_id_um) < 80) ||
+     (result?.ranked_causes?.[0]?.id === "powder_nozzle_mismatch"));
 
   return (
     <div>
-      <h1>Troubleshoot</h1>
-      <p>Upload a photo, then answer like an engineer — the next question depends on what you just said.</p>
+      {/* Top Workspace Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+            <span className="card-badge" style={{ color: "var(--primary)", borderColor: "rgba(16, 185, 129, 0.3)" }}>
+              Workspace Split · 50/50 Dual Engine
+            </span>
+          </div>
+          <h1>Diagnostic Workspace</h1>
+          <p className="muted" style={{ margin: 0, fontSize: "0.92rem" }}>
+            High-precision root-cause differential diagnosis and thermal rheology compensation engine
+          </p>
+        </div>
+
+        <div style={{ display: "flex", gap: "0.65rem", alignItems: "center" }}>
+          <button
+            className="btn-compact-demo"
+            onClick={loadDemo}
+            title="Pre-load Type 6 Solder Paste under-dispensing demo"
+          >
+            <span>🧪</span> Load Judge Demo
+          </button>
+          {result && (
+            <button className="btn-ghost" style={{ fontSize: "0.82rem", padding: "0.45rem 0.85rem" }} onClick={pdf}>
+              <span>📄</span> Export PDF
+            </button>
+          )}
+        </div>
+      </div>
+
       {error && <div className="banner warn">{error}</div>}
 
-      <div className="bento-grid" style={{ marginTop: "2rem" }}>
-        <div className="col-span-6" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {/* Responsive 50/50 Workspace Split */}
+      <div className="workspace-split">
+
+        {/* ===================================================================
+            LEFT COLUMN (Input & Physical Context - 50%)
+           =================================================================== */}
+        <div className="workspace-left-col">
           
-          <section className="card" style={{ background: "linear-gradient(145deg, rgba(20,20,35,0.7) 0%, rgba(10,10,20,0.9) 100%)", borderTop: "4px solid var(--primary)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
-              <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "rgba(0, 240, 255, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--primary)", fontWeight: "bold", fontSize: "1.2rem" }}>1</div>
-              <h2 style={{ margin: 0 }}>Dispense photo</h2>
+          {/* Card 1: Visual & Material Setup */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title-group">
+                <span style={{ color: "var(--secondary)" }}>📸</span>
+                <h3>Visual & Material Setup</h3>
+              </div>
+              <span className="card-badge">Section 1</span>
             </div>
-            <label className="drop">
-              <input
-                type="file"
-                accept="image/png,image/jpeg"
-                hidden
-                onChange={(e) => onFile(e.target.files?.[0] || null)}
-              />
-              <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📷</div>
-              {file ? <strong>{file.name}</strong> : "Drag & drop or click to upload"}
-            </label>
-            
-            {samples.length > 0 && (
-              <div style={{ marginTop: "1.5rem", position: "relative" }}>
-                <div style={{ textAlign: "center", color: "var(--text-dark)", fontSize: "0.85rem", marginBottom: "1rem", position: "relative" }}>
-                  <span style={{ background: "var(--bg-base)", padding: "0 10px", position: "relative", zIndex: 1 }}>OR</span>
-                  <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: "1px", background: "var(--glass-border)", zIndex: 0 }}></div>
+
+            {/* Compact Image Dropzone (h-36 / ~140px) */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => onFile(e.target.files?.[0] || null)}
+            />
+
+            <div
+              className="compact-dropzone"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {preview ? (
+                <>
+                  <img src={preview} alt="Dispense sample" className="compact-dropzone-preview" />
+                  <div className="compact-dropzone-content" style={{ background: "rgba(15, 23, 42, 0.8)", padding: "0.5rem 1rem", borderRadius: "6px" }}>
+                    <span style={{ color: "var(--primary)", fontWeight: 600, fontSize: "0.85rem" }}>✓ Image Loaded</span>
+                    <span className="muted" style={{ fontSize: "0.75rem" }}>Click to replace photo</span>
+                  </div>
+                </>
+              ) : (
+                <div className="compact-dropzone-content">
+                  <span style={{ fontSize: "1.5rem" }}>📷</span>
+                  <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--text-main)" }}>
+                    Drop dispense photo or click to browse
+                  </span>
+                  <span className="muted" style={{ fontSize: "0.75rem" }}>
+                    Supports PNG, JPG (Auto defect vision classification)
+                  </span>
                 </div>
-                <select
-                  className="select"
-                  style={{ padding: "1.2rem", background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.1)" }}
-                  value={sample}
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    setSample(name);
-                    setFile(null);
-                    setPreview(name ? sampleUrl(name) : "");
-                  }}
-                >
-                  <option value="">🧪 Pick a synthetic demo image</option>
-                  {samples.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+              )}
+            </div>
+
+            {/* Quick pre-loaded demo thumbnails */}
+            {samples.length > 0 && (
+              <div className="thumbnails-row">
+                <span className="muted" style={{ fontSize: "0.72rem", alignSelf: "center", whiteSpace: "nowrap" }}>
+                  Demo samples:
+                </span>
+                {samples.slice(0, 4).map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className={`thumbnail-pill ${sample === name ? "active" : ""}`}
+                    onClick={() => {
+                      setSample(name);
+                      setFile(null);
+                      setPreview(sampleUrl(name));
+                    }}
+                  >
+                    {name.replace(/\.[^/.]+$/, "").replace(/_/g, " ")}
+                  </button>
+                ))}
               </div>
             )}
-            {preview && <img src={preview} alt="Dispense" style={{ width: "100%", marginTop: "1rem", borderRadius: "10px" }} />}
-          </section>
 
-          {/* Environmental & Fluid Lifetime Controls */}
-          <section className="env-control-card">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                <span style={{ fontSize: "1.2rem" }}>🌡️</span>
-                <h3 style={{ margin: 0, fontSize: "1.05rem", color: "var(--primary)" }}>Workshop Environment & Rheology</h3>
+            {/* 2-Column Dropdown Grid: Material & Pattern */}
+            <div className="dropdown-grid">
+              <div>
+                <label className="form-label">Material Type</label>
+                <select
+                  value={answers.material || "solder_paste"}
+                  onChange={(e) => commit("material", e.target.value)}
+                >
+                  <option value="solder_paste">Solder Paste (Type 3-6)</option>
+                  <option value="silver_epoxy">Silver Epoxy</option>
+                  <option value="uv_glue">UV Acrylic / Adhesive</option>
+                  <option value="silicone_gel">Silicone Gel</option>
+                </select>
               </div>
-              <span className="muted" style={{ fontSize: "0.8rem" }}>Physics-Based Input</span>
+
+              <div>
+                <label className="form-label">Dispense Pattern</label>
+                <select
+                  value={answers.pattern || "dot"}
+                  onChange={(e) => commit("pattern", e.target.value)}
+                >
+                  <option value="dot">Dot Array</option>
+                  <option value="line">Continuous Line</option>
+                  <option value="dam_fill">Dam & Fill</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Physics & Environment Setup */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title-group">
+                <span style={{ color: "var(--warning)" }}>🌡️</span>
+                <h3>Physics & Environment Setup</h3>
+              </div>
+              <span className="card-badge">Section 2</span>
             </div>
 
-            {/* Ambient Temperature Slider & Controls */}
-            <div className="env-slider-group">
-              <div className="env-slider-header">
-                <label style={{ fontSize: "0.88rem", fontWeight: 600 }}>
-                  Ambient Temperature: <span style={{ color: ambientTemp !== 23.0 ? (ambientTemp > 23.0 ? "var(--warning)" : "var(--primary)") : "var(--success)", fontWeight: 800 }}>{ambientTemp.toFixed(1)}°C</span>
-                  {ambientTemp !== 23.0 && (
-                    <span className="muted" style={{ fontSize: "0.8rem", marginLeft: "0.5rem" }}>
-                      ({ambientTemp > 23.0 ? `+${(ambientTemp - 23.0).toFixed(1)}` : (ambientTemp - 23.0).toFixed(1)}°C drift)
+            <div className="env-control-panel">
+              {/* Ambient Temperature Slider & Presets */}
+              <div className="env-row">
+                <div className="env-row-header">
+                  <span className="form-label" style={{ margin: 0 }}>Workshop Ambient Temperature</span>
+                  <div className="env-value-badge" style={{ color: ambientTemp > 23 ? "var(--warning)" : ambientTemp < 23 ? "var(--secondary)" : "var(--primary)" }}>
+                    {ambientTemp.toFixed(1)}°C
+                    {ambientTemp !== 23 && (
+                      <span style={{ fontSize: "0.72rem", marginLeft: "0.35rem", opacity: 0.8 }}>
+                        ({ambientTemp > 23 ? `+${(ambientTemp - 23).toFixed(1)}` : (ambientTemp - 23).toFixed(1)}°C)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <input
+                  type="range"
+                  min="10.0"
+                  max="45.0"
+                  step="0.5"
+                  value={ambientTemp}
+                  onChange={(e) => setAmbientTemp(parseFloat(e.target.value))}
+                  style={{ width: "100%", accentColor: "var(--warning)", cursor: "pointer" }}
+                />
+
+                <div className="env-presets-group">
+                  {[
+                    { label: "Standard (23°C)", val: 23.0 },
+                    { label: "Warm (26.5°C)", val: 26.5 },
+                    { label: "Cold (18°C)", val: 18.0 },
+                    { label: "Peak (30°C)", val: 30.0 },
+                  ].map((p) => (
+                    <button
+                      key={p.val}
+                      type="button"
+                      className={`env-preset-btn ${ambientTemp === p.val ? "active" : ""}`}
+                      onClick={() => setAmbientTemp(p.val)}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Syringe Pot Life Stepper / Slider */}
+              <div className="env-row">
+                <div className="env-row-header">
+                  <span className="form-label" style={{ margin: 0 }}>Syringe Open Pot Life</span>
+                  <div className="env-value-badge">
+                    {potLife.toFixed(1)} hrs
+                    <span style={{ fontSize: "0.72rem", marginLeft: "0.4rem", color: potLife > 6 ? "var(--danger)" : potLife < 2 ? "var(--primary)" : "var(--text-muted)" }}>
+                      {potLife < 2 ? "Fresh" : potLife > 6 ? "Aged (>6h)" : "Normal"}
                     </span>
-                  )}
+                  </div>
+                </div>
+
+                <input
+                  type="range"
+                  min="0.0"
+                  max="24.0"
+                  step="0.5"
+                  value={potLife}
+                  onChange={(e) => setPotLife(parseFloat(e.target.value))}
+                  style={{ width: "100%", accentColor: "var(--secondary)", cursor: "pointer" }}
+                />
+
+                <div className="env-presets-group">
+                  {[
+                    { label: "Fresh (<2h)", val: 0.5 },
+                    { label: "Mid-Shift (4h)", val: 4.0 },
+                    { label: "Aged (>6h)", val: 8.0 },
+                  ].map((p) => (
+                    <button
+                      key={p.val}
+                      type="button"
+                      className={`env-preset-btn ${potLife === p.val ? "active" : ""}`}
+                      onClick={() => setPotLife(p.val)}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Primary Observed Symptom Card */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title-group">
+                <span style={{ color: "var(--primary)" }}>📋</span>
+                <h3>Primary Observed Symptoms</h3>
+              </div>
+              <div style={{ display: "flex", gap: "0.85rem", alignItems: "center" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.78rem", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={useLlm}
+                    onChange={(e) => setUseLlm(e.target.checked)}
+                  />
+                  <span style={{ color: useLlm ? "var(--secondary)" : "var(--text-muted)", fontWeight: useLlm ? 600 : 400 }}>
+                    LLM Q&A
+                  </span>
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.78rem", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={trainingMode}
+                    onChange={(e) => setTrainingMode(e.target.checked)}
+                  />
+                  <span style={{ color: trainingMode ? "var(--primary)" : "var(--text-muted)", fontWeight: trainingMode ? 600 : 400 }}>
+                    Training Mode
+                  </span>
                 </label>
               </div>
-              <input
-                type="range"
-                min="10.0"
-                max="45.0"
-                step="0.5"
-                value={ambientTemp}
-                onChange={(e) => setAmbientTemp(parseFloat(e.target.value))}
-                style={{ width: "100%", accentColor: "var(--primary)", cursor: "pointer" }}
-              />
-              <div className="env-slider-presets">
-                {[
-                  { label: "❄️ Cold (18°C)", val: 18.0 },
-                  { label: "🟢 Nominal (23°C)", val: 23.0 },
-                  { label: "🔥 Warm (26.5°C)", val: 26.5 },
-                  { label: "🌡️ Peak (30°C)", val: 30.0 },
-                ].map((p) => (
-                  <button
-                    key={p.val}
-                    type="button"
-                    className={`env-preset-btn ${ambientTemp === p.val ? "active" : ""}`}
-                    onClick={() => setAmbientTemp(p.val)}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
             </div>
 
-            {/* Syringe Pot Life / Open Hours */}
-            <div className="env-slider-group" style={{ marginBottom: 0 }}>
-              <div className="env-slider-header">
-                <label style={{ fontSize: "0.88rem", fontWeight: 600 }}>
-                  Syringe Pot Life (Hours): <span style={{ color: potLife > 6.0 ? "var(--warning)" : "var(--text-main)", fontWeight: 800 }}>{potLife.toFixed(1)}h</span>
-                  {potLife > 6.0 && (
-                    <span style={{ fontSize: "0.78rem", color: "var(--warning)", marginLeft: "0.5rem", fontWeight: 700 }}>
-                      ⚠️ &gt;6h Thixotropic Alert
-                    </span>
-                  )}
-                </label>
-              </div>
-              <input
-                type="range"
-                min="0.0"
-                max="24.0"
-                step="0.5"
-                value={potLife}
-                onChange={(e) => setPotLife(parseFloat(e.target.value))}
-                style={{ width: "100%", accentColor: "var(--secondary)", cursor: "pointer" }}
-              />
-              <div className="env-slider-presets">
-                {[
-                  { label: "⏱️ Fresh (0.5h)", val: 0.5 },
-                  { label: "⏱️ 3.0h", val: 3.0 },
-                  { label: "⚠️ Aged (8.0h)", val: 8.0 },
-                ].map((p) => (
-                  <button
-                    key={p.val}
-                    type="button"
-                    className={`env-preset-btn ${potLife === p.val ? "active" : ""}`}
-                    onClick={() => setPotLife(p.val)}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="card" style={{ background: "linear-gradient(145deg, rgba(20,20,35,0.7) 0%, rgba(10,10,20,0.9) 100%)", borderTop: "4px solid var(--secondary)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
-              <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "rgba(176, 38, 255, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--secondary)", fontWeight: "bold", fontSize: "1.2rem" }}>2</div>
-              <h2 style={{ margin: 0 }}>Guided interview</h2>
-            </div>
-            
-            <div className="chips" style={{ background: "rgba(0,0,0,0.3)", padding: "1rem", borderRadius: "10px", border: "1px solid var(--glass-border)" }}>
+            {/* Dimension Progress Chips */}
+            <div className="chips" style={{ marginBottom: "0.85rem" }}>
               {progress?.dimensions?.map((dim: any) => (
-                <span key={dim.id} className={`chip${dim.done ? " done" : ""}`}>
+                <span key={dim.id} className={`chip ${dim.done ? "done" : ""}`}>
                   {dim.done ? "✓" : "·"} {dim.title}
                 </span>
               ))}
             </div>
 
-            {history.length > 0 && (
-              <details>
-                <summary>Answers so far</summary>
-                {history.map((id) => (
-                  <p key={id}>
-                    <strong>{pretty(id)}:</strong> {pretty(answers[id])}
-                  </p>
-                ))}
-              </details>
-            )}
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", margin: "1rem 0" }}>
-              <label className="muted" style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                <input type="checkbox" checked={useLlm} onChange={(e) => setUseLlm(e.target.checked)} />
-                Let the LLM pick among follow-ups
-              </label>
-              
-              {/* Feature 1 Toggle */}
-              <label className="muted" style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                <input type="checkbox" checked={trainingMode} onChange={(e) => setTrainingMode(e.target.checked)} />
-                <span style={{ color: trainingMode ? 'var(--primary)' : 'inherit', fontWeight: trainingMode ? 600 : 400 }}>
-                  Operator Training Mode (Show AI reasoning)
-                </span>
-              </label>
-            </div>
-
+            {/* Dynamic Q&A Body */}
             {currentQ ? (
-              <div style={{ background: "rgba(0,0,0,0.2)", padding: "1.5rem", borderRadius: "var(--radius-lg)", border: "1px solid var(--glass-border)", marginTop: "1rem" }}>
-                {currentQ.source !== "core" && (
-                  <div className="banner info">
-                    {currentQ.fuzzy_strength < 0.999
-                      ? `Fuzzy follow-up (μ=${Number(currentQ.fuzzy_strength).toFixed(2)}) — symptoms overlap this question.`
-                      : "Follow-up — chosen because of your previous answers."}
-                  </div>
-                )}
-                {currentQ.optional && <p className="muted">Optional — skip if you do not know.</p>}
-                <h3>{currentQ.prompt}</h3>
-                
-                {/* Feature 1 Educational Tip */}
+              <div style={{ marginTop: "0.5rem" }}>
+                <h4 style={{ marginBottom: "0.5rem", color: "var(--text-main)" }}>
+                  {currentQ.prompt}
+                </h4>
+
                 {trainingMode && currentQ.why && (
                   <div className="training-tip">
-                    <strong>💡 Educational Tip:</strong> {currentQ.why}
+                    <strong>💡 Engineering Note:</strong> {currentQ.why}
                   </div>
                 )}
 
-                <div style={{ marginTop: "1.5rem" }}>
+                <div style={{ marginTop: "0.85rem" }}>
                   {currentQ.options === "number_or_skip" ? (
-                    <>
+                    <div>
                       <input
-                        className="input"
+                        className="input mono"
                         type="number"
                         min={0}
                         max={400}
-                        value={nozzle}
+                        value={nozzle || ""}
                         onChange={(e) => setNozzle(Number(e.target.value))}
-                        placeholder="Nozzle inner diameter (µm)"
+                        placeholder="Enter nozzle inner diameter (µm)..."
                       />
-                      <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
-                        <button className="btn-primary" onClick={() => (nozzle ? commit(currentQ.id, nozzle) : skip(currentQ.id))}>
-                          Save nozzle ID
+                      <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
+                        <button
+                          className="btn-primary"
+                          style={{ flex: 1, padding: "0.55rem" }}
+                          onClick={() => (nozzle ? commit(currentQ.id, nozzle) : skip(currentQ.id))}
+                        >
+                          Save Nozzle ID
                         </button>
-                        <button className="btn-ghost" onClick={() => skip(currentQ.id)}>
+                        <button
+                          className="btn-ghost"
+                          style={{ padding: "0.55rem 1rem" }}
+                          onClick={() => skip(currentQ.id)}
+                        >
                           Skip
                         </button>
                       </div>
-                    </>
+                    </div>
                   ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
                       {(currentQ.choices || []).map((choice: any) => (
-                        <button key={choice.id} className="choice" onClick={() => commit(currentQ.id, choice.id)}>
-                          {choice.label}
+                        <button
+                          key={choice.id}
+                          className="choice"
+                          onClick={() => commit(currentQ.id, choice.id)}
+                        >
+                          <span>{choice.label}</span>
+                          <span className="muted" style={{ fontSize: "0.75rem" }}>Select →</span>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
-                
+
                 {order.length > 0 && (
-                  <button className="btn-ghost" style={{ marginTop: "1rem", width: "100%" }} onClick={back}>
-                    Back
+                  <button
+                    className="btn-ghost"
+                    style={{ marginTop: "0.75rem", width: "100%", padding: "0.45rem", fontSize: "0.8rem" }}
+                    onClick={back}
+                  >
+                    ← Previous Question
                   </button>
                 )}
               </div>
             ) : complete ? (
-              <div style={{ background: "rgba(0,0,0,0.2)", padding: "1.5rem", borderRadius: "var(--radius-lg)", border: "1px solid var(--glass-border)", marginTop: "1rem" }}>
-                <div className="banner ok">Interview complete — review, then Analyse.</div>
-                <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
-                  <button className="btn-ghost" onClick={back} style={{ flex: 1 }}>
-                    Back
-                  </button>
-                  <button
-                    className="btn-ghost"
-                    onClick={() => {
-                      setAnswers({});
-                      setOrder([]);
-                      setResult(null);
-                      refreshQuestion({});
-                    }}
-                    style={{ flex: 1 }}
-                  >
-                    Restart interview
-                  </button>
-                </div>
+              <div className="banner ok" style={{ margin: "0.5rem 0" }}>
+                <span>✓ All required symptom dimensions identified. Ready to analyze.</span>
               </div>
             ) : (
-              <p>Loading interview…</p>
+              <p className="muted" style={{ fontSize: "0.85rem" }}>Configuring symptom interview questions...</p>
             )}
-          </section>
 
-          <button className="btn-primary" disabled={!complete || analyzing} onClick={analyze}>
-            {analyzing ? "Analysing…" : "Analyse"}
+            {history.length > 0 && (
+              <details style={{ marginTop: "0.85rem" }}>
+                <summary>Current Symptom Log ({history.length})</summary>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  {history.map((id) => (
+                    <div key={id} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
+                      <span className="muted">{pretty(id)}:</span>
+                      <span className="mono" style={{ color: "var(--text-main)" }}>{pretty(answers[id])}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+
+          {/* Primary CTA: Analyze Root Cause */}
+          <button
+            className="btn-primary btn-cta-full"
+            disabled={analyzing || (!complete && !answers.defect_class && !answers.amount)}
+            onClick={analyze}
+          >
+            {analyzing ? "⚡ Running Bayesian Inference & Rheology Simulation..." : "⚡ Analyze Root Cause"}
           </button>
-          {!complete && <p className="muted" style={{ textAlign: 'center' }}>Answer the required questions to enable Analyse.</p>}
         </div>
 
-        <section className="card col-span-6" style={{ alignSelf: "flex-start", background: "linear-gradient(145deg, rgba(20,20,35,0.7) 0%, rgba(10,10,20,0.9) 100%)", borderTop: "4px solid var(--success)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
-            <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "rgba(0, 255, 170, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--success)", fontWeight: "bold", fontSize: "1.2rem" }}>3</div>
-            <h2 style={{ margin: 0 }}>Live analysis</h2>
-          </div>
-          
+        {/* ===================================================================
+            RIGHT COLUMN (Live Intelligence Output - 50%)
+           =================================================================== */}
+        <div className="workspace-right-col">
           {!result ? (
-            <p>Complete the interview and click Analyse. Tip: Dashboard → Load demo for the judge scenario.</p>
+            <div className="standby-state-box">
+              <div className="standby-icon">⚡</div>
+              <h3 style={{ margin: 0, color: "var(--text-main)" }}>Awaiting Diagnostic Execution</h3>
+              <p style={{ maxWidth: "380px", margin: 0, fontSize: "0.88rem" }}>
+                Configure physical dispense parameters on the left and click <strong>Analyze Root Cause</strong> to run Bayesian differential diagnosis and Arrhenius rheology simulation.
+              </p>
+            </div>
           ) : (
-            <div>
-              <div className="bento-grid" style={{ marginBottom: "1.5rem" }}>
-                <div className="metric col-span-6">
-                  <b style={{ fontSize: "1.2rem" }}>{pretty(result.pattern_specific_name)}</b>
-                  <span>Defect</span>
-                </div>
-                <div className="metric col-span-6">
-                  <b style={{ fontSize: "1.2rem" }}>
-                    {result.vision ? `${Math.round((result.vision.confidence || 0) * 100)}%` : "n/a"}
-                  </b>
-                  {/* Visual Star Rating added here */}
-                  {result.vision && renderStars((result.vision.confidence || 0) * 100)}
-                  <span>Vision Confidence</span>
-                </div>
-              </div>
-
-              {/* Feature 5: Historical Dashboard */}
-              {result.similar?.breakdown && result.similar.breakdown.length > 0 && (
-                <div style={{ background: "rgba(0,0,0,0.3)", padding: "1.5rem", borderRadius: "10px", marginBottom: "1.5rem", border: "1px solid var(--glass-border)" }}>
-                  <h3 style={{ margin: "0 0 1rem 0", color: "var(--primary)", fontSize: "1.1rem" }}>📊 Historical Case Lookup</h3>
-                  <p className="muted" style={{ fontSize: "0.9rem", marginBottom: "1rem" }}>
-                    In the last {result.similar.total} similar {pretty(result.defect_class)} cases on {pretty(result.material)}, the confirmed causes were:
-                  </p>
-                  {result.similar.breakdown.map((row: any) => {
-                    const pct = Math.round((row.count / result.similar.total) * 100);
-                    return (
-                      <div key={row.cause} style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "0.75rem" }}>
-                        <div style={{ width: "40px", textAlign: "right", fontWeight: "bold" }}>{pct}%</div>
-                        <div style={{ flex: 1, height: "12px", background: "rgba(255,255,255,0.05)", borderRadius: "10px", overflow: "hidden" }}>
-                          <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, var(--primary), var(--secondary))" }} />
-                        </div>
-                        <div style={{ width: "160px", fontSize: "0.9rem" }}>{pretty(row.cause)}</div>
+            <>
+              {/* Output Card 1: Top Priority Cause Card */}
+              {result.ranked_causes?.[0] && (
+                <div className="top-cause-card">
+                  <div className="top-cause-header">
+                    <div>
+                      <span className="card-badge" style={{ color: "var(--primary)", borderColor: "rgba(16, 185, 129, 0.3)" }}>
+                        Rank #1 Root Cause
+                      </span>
+                      <div className="top-cause-name" style={{ marginTop: "0.35rem" }}>
+                        {result.ranked_causes[0].name}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {result.symptoms?.vision_disagreement && (
-                <div className="banner warn">
-                  Your symptom answer and the photo classifier disagree. Ranking uses your answers.
-                </div>
-              )}
-
-              {/* INNOVATIVE FEATURE: Physics-Based Rheology & Thermal Offset Calculator */}
-              {result.rheology && (
-                <div className="rheology-card">
-                  <div className="rheology-header">
-                    <div className="rheology-title">
-                      <span style={{ fontSize: "1.35rem" }}>🌡️</span>
-                      <div>
-                        <h3 style={{ margin: 0, fontSize: "1.1rem", color: "var(--primary)" }}>
-                          Physics Rheology & Thermal Offset
-                        </h3>
-                        <span className="muted" style={{ fontSize: "0.8rem" }}>
-                          Arrhenius Viscosity Model & Poiseuille Flow Compensation
-                        </span>
+                      <div className="top-cause-meta">
+                        Category: {result.ranked_causes[0].family_label || result.ranked_causes[0].category} · Cost Rank: {result.ranked_causes[0].cost_rank}
                       </div>
                     </div>
-                    <span className={`rheology-status-badge ${result.rheology.risk_level.toLowerCase()}`}>
-                      {result.rheology.risk_level === "OPTIMAL"
-                        ? "🟢 Optimal Nominal"
-                        : result.rheology.risk_level === "MODERATE_DRIFT"
-                        ? "🟡 Moderate Thermal Drift"
-                        : "🔴 High Thermal Drift"}
+                  </div>
+
+                  {/* Confidence Progress Bar */}
+                  <div className="confidence-bar-container">
+                    <div className="confidence-bar-header">
+                      <span className="confidence-bar-label">Bayesian Likelihood Confidence</span>
+                      <span className="confidence-percentage">
+                        {result.ranked_causes[0].likelihood_pct}%
+                      </span>
+                    </div>
+                    <div className="progress-track">
+                      <div
+                        className="progress-fill"
+                        style={{ width: `${Math.min(100, result.ranked_causes[0].likelihood_pct)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Explicit Rule Flags */}
+                  {isNswRuleViolation && (
+                    <div className="rule-flag-pill">
+                      <span>⚠️</span>
+                      <span>
+                        <strong>NSW 5× Rule Violation:</strong> Nozzle ID {answers.nozzle_id_um ? `(${answers.nozzle_id_um}µm)` : ""} is below the 5× largest powder particle floor (80µm).
+                      </span>
+                    </div>
+                  )}
+
+                  {result.fired_rules?.slice(0, 2).map((rule: any) => (
+                    <div key={rule.id} className="rule-flag-pill" style={{ background: "rgba(56, 189, 248, 0.08)", borderColor: "rgba(56, 189, 248, 0.3)", color: "#bae6fd" }}>
+                      <span>💡</span>
+                      <span>{rule.explain || rule.id}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Output Card 2: Thermal & Rheology Offset Card (Amber Outline) */}
+              {result.rheology && (
+                <div className="rheology-offset-card">
+                  <div className="rheology-offset-header">
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <span style={{ fontSize: "1.25rem" }}>🌡️</span>
+                      <h3 style={{ margin: 0, color: "var(--warning)" }}>
+                        Thermal & Rheology Offset
+                      </h3>
+                    </div>
+                    <span className="card-badge" style={{ color: "var(--warning)", borderColor: "rgba(245, 158, 11, 0.4)" }}>
+                      {result.rheology.risk_level === "OPTIMAL" ? "Optimal Nominal" : "Thermal Drift Warning"}
                     </span>
                   </div>
 
-                  {result.rheology.is_clamped && (
-                    <div className="safety-guard-pill">
-                      🛡️ Safety Boundary Guard: Input values safely clamped to factory operating window (10°C–45°C, ±30% max offset).
-                    </div>
-                  )}
-
-                  {/* Rheology Quantitative Metrics */}
-                  <div className="rheology-grid">
-                    <div className="rheology-stat-box">
-                      <span className="rheology-stat-label">Workshop Temp</span>
-                      <div className="rheology-stat-val">
-                        {result.rheology.ambient_temp_c}°C
-                      </div>
-                      <span className="rheology-stat-sub">
-                        {result.rheology.delta_t_c >= 0 ? `+${result.rheology.delta_t_c}` : result.rheology.delta_t_c}°C vs 23°C baseline
-                      </span>
-                    </div>
-
-                    <div className="rheology-stat-box">
-                      <span className="rheology-stat-label">Viscosity Drift (Δη)</span>
-                      <div
-                        className="rheology-stat-val"
-                        style={{
-                          color:
-                            result.rheology.viscosity_drift_pct < -5
-                              ? "var(--danger)"
-                              : result.rheology.viscosity_drift_pct > 5
-                              ? "var(--warning)"
-                              : "var(--success)",
-                        }}
-                      >
-                        {result.rheology.viscosity_drift_pct >= 0 ? `+${result.rheology.viscosity_drift_pct}` : result.rheology.viscosity_drift_pct}%
-                      </div>
-                      <span className="rheology-stat-sub">
-                        Ratio: {result.rheology.viscosity_ratio}x ({result.rheology.viscosity_drift_pct < 0 ? "Fluid thinned" : result.rheology.viscosity_drift_pct > 0 ? "Fluid thickened" : "Nominal"})
-                      </span>
-                    </div>
-
-                    <div className="rheology-stat-box">
-                      <span className="rheology-stat-label">Pressure Offset (ΔP)</span>
-                      <div className="rheology-stat-val" style={{ color: "var(--primary)" }}>
+                  {/* Quantitative Parameter Offset Chips in JetBrains Mono */}
+                  <div className="rheology-chips-grid">
+                    <div className="offset-chip">
+                      <span className="offset-chip-label">📉 Pressure Offset</span>
+                      <span className="offset-chip-value mono warning">
                         {result.rheology.pressure_offset_mpa >= 0 ? `+${result.rheology.pressure_offset_mpa}` : result.rheology.pressure_offset_mpa} MPa
-                      </div>
-                      <span className="rheology-stat-sub">
-                        {result.rheology.pressure_offset_pct >= 0 ? `+${result.rheology.pressure_offset_pct}` : result.rheology.pressure_offset_pct}% pneumatic compensation
+                      </span>
+                      <span className="muted" style={{ fontSize: "0.72rem" }}>
+                        ({result.rheology.pressure_offset_pct >= 0 ? `+${result.rheology.pressure_offset_pct}` : result.rheology.pressure_offset_pct}%)
                       </span>
                     </div>
 
-                    <div className="rheology-stat-box">
-                      <span className="rheology-stat-label">Tip Heater Offset</span>
-                      <div className="rheology-stat-val" style={{ color: "var(--secondary)" }}>
+                    <div className="offset-chip">
+                      <span className="offset-chip-label">🌡️ Tip Temp Offset</span>
+                      <span className="offset-chip-value mono">
                         {result.rheology.heater_offset_c > 0 ? `+${result.rheology.heater_offset_c}` : result.rheology.heater_offset_c}°C
-                      </div>
-                      <span className="rheology-stat-sub">
-                        Thermal nozzle offset
+                      </span>
+                      <span className="muted" style={{ fontSize: "0.72rem" }}>
+                        Nozzle heater trim
+                      </span>
+                    </div>
+
+                    <div className="offset-chip">
+                      <span className="offset-chip-label">🔄 Viscosity Drift</span>
+                      <span className="offset-chip-value mono" style={{ color: result.rheology.viscosity_drift_pct < 0 ? "var(--danger)" : "var(--primary)" }}>
+                        {result.rheology.viscosity_drift_pct >= 0 ? `+${result.rheology.viscosity_drift_pct}` : result.rheology.viscosity_drift_pct}%
+                      </span>
+                      <span className="muted" style={{ fontSize: "0.72rem" }}>
+                        Ratio: {result.rheology.viscosity_ratio}x
                       </span>
                     </div>
                   </div>
 
-                  {/* Machine Parameter Compensation Action */}
-                  <div className="compensation-action-card">
-                    <div className="compensation-action-title">
-                      ⚙️ Machine Parameter Compensation Recommendation
-                    </div>
-                    <div className="compensation-action-detail">
-                      {result.rheology.pressure_offset_mpa < 0 ? (
-                        <>
-                          <strong>Reduce dispense pressure by {Math.abs(result.rheology.pressure_offset_mpa).toFixed(4)} MPa ({Math.abs(result.rheology.pressure_offset_pct)}%)</strong> to compensate for thermal viscosity thinning and prevent dot slump or line bleed.
-                        </>
-                      ) : result.rheology.pressure_offset_mpa > 0 ? (
-                        <>
-                          <strong>Increase dispense pressure by +{result.rheology.pressure_offset_mpa.toFixed(4)} MPa (+{result.rheology.pressure_offset_pct}%)</strong> to overcome fluid thickening caused by cool cleanroom conditions.
-                        </>
-                      ) : (
-                        <>
-                          <strong>Fluid viscosity is nominal.</strong> Maintain standard pneumatic baseline pressure (0.200 MPa).
-                        </>
-                      )}
-                      {result.rheology.heater_offset_c !== 0 && (
-                        <span style={{ display: "block", marginTop: "0.4rem" }}>
-                          Optional nozzle heater trim: Adjust tip heater setpoint by {result.rheology.heater_offset_c > 0 ? `+${result.rheology.heater_offset_c}` : result.rheology.heater_offset_c}°C.
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Thixotropic Purge Alert */}
-                  {result.rheology.thixotropic_alert && (
-                    <div className="thixotropic-banner">
-                      <span style={{ fontSize: "1.3rem" }}>⚠️</span>
+                  {/* Offset Action Recommendation */}
+                  <div className="offset-action-banner">
+                    {result.rheology.pressure_offset_mpa < 0 ? (
                       <div>
-                        <strong>Thixotropic Restructuring Warning:</strong>
-                        <p style={{ margin: "0.25rem 0 0 0" }}>{result.rheology.thixotropic_alert}</p>
+                        <strong>Compensation:</strong> Reduce pneumatic pressure by {Math.abs(result.rheology.pressure_offset_mpa).toFixed(4)} MPa to prevent spreading slump.
                       </div>
-                    </div>
-                  )}
+                    ) : result.rheology.pressure_offset_mpa > 0 ? (
+                      <div>
+                        <strong>Compensation:</strong> Increase pneumatic pressure by +{result.rheology.pressure_offset_mpa.toFixed(4)} MPa to overcome fluid thickening.
+                      </div>
+                    ) : (
+                      <div><strong>Nominal:</strong> Fluid viscosity is within operating baseline (23°C).</div>
+                    )}
+                    {result.rheology.thixotropic_alert && (
+                      <div style={{ marginTop: "0.35rem", fontWeight: 600 }}>
+                        🔄 Action: Execute 3 continuous dummy purge shots (open pot life &gt;6h).
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* INNOVATIVE FEATURE: Interactive Elimination Tree & Counter-Test Loop */}
-              <div className="diff-panel" style={{ marginTop: "1.5rem" }}>
-                <div className="diff-header">
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <span style={{ fontSize: "1.3rem" }}>🩺</span>
-                      <h3 style={{ margin: 0, fontSize: "1.15rem", color: "var(--primary)" }}>
-                        Differential Diagnosis & Counter-Test Loop
-                      </h3>
-                    </div>
-                    <p className="muted" style={{ fontSize: "0.85rem", marginTop: "0.2rem" }}>
-                      Active hypothesis elimination with live Bayesian confidence re-scoring
-                    </p>
+              {/* Output Card 3: Interactive Elimination Tree Card */}
+              <div className="elimination-card">
+                <div className="elimination-header">
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ fontSize: "1.2rem" }}>🩺</span>
+                    <h3 style={{ margin: 0, color: "var(--text-main)" }}>
+                      Interactive Elimination Tree
+                    </h3>
                   </div>
-                  
-                  <div className="undo-reset-toolbar">
-                    <button 
-                      onClick={handleUndoStep} 
+
+                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                    <button
+                      className="btn-compact-demo"
                       disabled={historyStack.length === 0 || verifying}
-                      title="Revert previous test outcome and restore confidence distribution"
+                      onClick={handleUndoStep}
+                      title="Undo last verification step"
                     >
-                      ↩️ Undo Step
+                      ↩ Undo
                     </button>
-                    <button 
-                      onClick={handleResetDiagnosticLoop} 
+                    <button
+                      className="btn-compact-demo"
                       disabled={eliminationPathway.length === 0 || verifying}
-                      title="Reset elimination tree back to initial diagnosis"
+                      onClick={handleResetDiagnosticLoop}
+                      title="Reset elimination loop"
                     >
-                      🔄 Reset Loop
+                      🔄 Reset
                     </button>
                   </div>
                 </div>
 
+                {/* Resolved State */}
                 {isResolved ? (
-                  <div className="banner ok" style={{ flexDirection: "column", alignItems: "flex-start", gap: "0.75rem", padding: "1.25rem", borderRadius: "var(--radius-md)" }}>
+                  <div className="banner ok" style={{ flexDirection: "column", alignItems: "flex-start", gap: "0.6rem" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <span style={{ fontSize: "1.5rem" }}>🎉</span>
-                      <strong style={{ fontSize: "1.1rem" }}>
+                      <span style={{ fontSize: "1.25rem" }}>🎉</span>
+                      <strong style={{ fontSize: "1.05rem" }}>
                         Root Cause Confirmed: {pretty(confirmedCause || result.ranked_causes?.[0]?.name)}
                       </strong>
                     </div>
-                    <p style={{ margin: 0, fontSize: "0.9rem" }}>
-                      Verification test succeeded. Issue resolution path recorded into historical audit database.
+                    <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-main)" }}>
+                      Physical verification test succeeded. Root cause confirmed and recorded into closed-loop audit history.
                     </p>
-                    <button className="btn-primary" onClick={pdf} style={{ alignSelf: "flex-start", marginTop: "0.5rem" }}>
-                      📄 Download Confirmed Resolution Report
+                    <button className="btn-primary" style={{ marginTop: "0.5rem", padding: "0.6rem 1.2rem" }} onClick={pdf}>
+                      📄 Download Confirmed Report (PDF)
                     </button>
                   </div>
                 ) : currentTest?.action_type === "ESCALATE" ? (
-                  <div className="fae-escalation-alert">
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.5rem" }}>
-                      <span style={{ fontSize: "1.5rem" }}>🚨</span>
-                      <strong style={{ color: "var(--danger)", fontSize: "1.1rem" }}>
-                        {currentTest.title}
-                      </strong>
-                    </div>
-                    <p style={{ fontSize: "0.95rem", marginBottom: "1rem", color: "var(--text-main)" }}>
+                  <div className="banner danger" style={{ flexDirection: "column", alignItems: "flex-start", gap: "0.6rem" }}>
+                    <strong style={{ color: "var(--danger)", fontSize: "1rem" }}>
+                      🚨 {currentTest.title}
+                    </strong>
+                    <p style={{ margin: 0, fontSize: "0.88rem", color: "var(--text-main)" }}>
                       {currentTest.instruction}
                     </p>
-                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                      <button className="btn-primary" style={{ background: "var(--danger)", borderColor: "var(--danger)", color: "#fff" }} onClick={pdf}>
-                        📋 Export FAE Diagnostic Packet (PDF)
-                      </button>
-                      <button className="btn-ghost" onClick={handleResetDiagnosticLoop}>
-                        🔄 Restart Automated Checks
-                      </button>
-                    </div>
+                    <button className="btn-primary" style={{ background: "var(--danger)", borderColor: "var(--danger)", color: "#fff" }} onClick={pdf}>
+                      Export FAE Diagnostic Packet (PDF)
+                    </button>
                   </div>
                 ) : (
                   <>
-                    {/* Leading Hypothesis Card */}
-                    {result.ranked_causes?.[0] && (
-                      <div className="hypothesis-lead-card">
-                        <div className="hypothesis-lead-info">
-                          <span style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", fontWeight: 700 }}>
-                            Target Hypothesis (Rank #1)
-                          </span>
-                          <strong style={{ fontSize: "1.15rem", color: "var(--text-main)" }}>
-                            {result.ranked_causes[0].name}
-                          </strong>
-                          <span className="muted" style={{ fontSize: "0.85rem" }}>
-                            {result.ranked_causes[0].family_label || result.ranked_causes[0].category}
-                          </span>
-                        </div>
-                        <div className="hypothesis-confidence-pill">
-                          {result.ranked_causes[0].likelihood_pct}%
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Low-Cost Action Prompt Card */}
+                    {/* Lowest-Cost Verification Action Box */}
                     {currentTest && (
-                      <div className="counter-test-card">
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span className="cost-tag">{currentTest.cost_badge}</span>
-                          <span className="muted" style={{ fontSize: "0.8rem" }}>Recommended Low-Cost Test</span>
+                      <div className="counter-action-box">
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+                          <span className="card-badge" style={{ color: "var(--secondary)", borderColor: "rgba(56, 189, 248, 0.3)" }}>
+                            {currentTest.cost_badge || "⚡ Low-Cost Action"}
+                          </span>
+                          <span className="muted" style={{ fontSize: "0.75rem" }}>
+                            Target: {pretty(result.ranked_causes?.[0]?.name || "Lead Hypothesis")}
+                          </span>
                         </div>
-                        <h4 style={{ margin: 0, fontSize: "1.05rem", color: "var(--primary)" }}>
-                          {currentTest.title}
-                        </h4>
-                        <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.5, color: "var(--text-main)" }}>
-                          {currentTest.instruction}
-                        </p>
-                        {currentTest.expected_resolved && (
-                          <div style={{ background: "rgba(0,0,0,0.25)", padding: "0.75rem", borderRadius: "var(--radius-sm)", borderLeft: "3px solid var(--success)", fontSize: "0.85rem" }}>
-                            <strong style={{ color: "var(--success)" }}>Expected Outcome:</strong> {currentTest.expected_resolved}
-                          </div>
-                        )}
+                        <div className="counter-action-title">{currentTest.title}</div>
+                        <div className="counter-action-instruction">{currentTest.instruction}</div>
 
-                        {/* 3 Quick Feedback Action Buttons */}
-                        <div className="test-feedback-btn-group">
+                        {/* 3 Quick Feedback Buttons */}
+                        <div className="feedback-buttons-row">
                           <button
-                            className="btn-feedback btn-feedback-resolved"
+                            className="btn-fb btn-fb-resolved"
                             disabled={verifying}
                             onClick={() => handleCounterTestFeedback("resolved")}
                           >
                             <span>🟢 Resolved</span>
                           </button>
                           <button
-                            className="btn-feedback btn-feedback-shifted"
+                            className="btn-fb btn-fb-shifted"
                             disabled={verifying}
                             onClick={() => handleCounterTestFeedback("shifted")}
                           >
                             <span>🟡 Shifted</span>
                           </button>
                           <button
-                            className="btn-feedback btn-feedback-unresolved"
+                            className="btn-fb btn-fb-unresolved"
                             disabled={verifying}
                             onClick={() => handleCounterTestFeedback("unresolved")}
                           >
@@ -838,101 +867,108 @@ function TroubleshootInner() {
                   </>
                 )}
 
-                {/* Elimination Audit Trail */}
+                {/* Live Visual Elimination Trail */}
                 {eliminationPathway.length > 0 && (
-                  <div style={{ marginTop: "1.25rem" }}>
-                    <h5 style={{ margin: "0 0 0.5rem 0", color: "var(--text-muted)", fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      Elimination Pathway ({eliminationPathway.length} Step{eliminationPathway.length > 1 ? "s" : ""})
-                    </h5>
-                    <div className="elimination-timeline">
-                      {eliminationPathway.map((step: any, idx: number) => {
-                        const isElim = step.status === "ELIMINATED";
-                        const isConf = step.status === "CONFIRMED";
-                        return (
-                          <div 
-                            key={idx} 
-                            className={`elimination-step-node ${isElim ? "eliminated" : isConf ? "confirmed" : "shifted"}`}
-                          >
-                            <span style={{ fontWeight: 800, minWidth: "20px" }}>{idx + 1}.</span>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                                <span style={{ fontWeight: 700, color: isElim ? "var(--danger)" : isConf ? "var(--success)" : "var(--warning)" }}>
-                                  {isElim ? "❌ ELIMINATED" : isConf ? "✅ CONFIRMED" : "🟡 SHIFTED"}
-                                </span>
-                                <span className={isElim ? "eliminated-cause-name" : ""}>
-                                  {step.target_cause_name}
-                                </span>
-                              </div>
-                              <div className="muted" style={{ fontSize: "0.8rem", marginTop: "0.15rem" }}>
-                                {step.summary || `Tested via ${step.test_title}`}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                  <div className="elimination-trail">
+                    <span className="form-label" style={{ margin: 0 }}>
+                      Live Elimination Trail ({eliminationPathway.length} Step{eliminationPathway.length > 1 ? "s" : ""})
+                    </span>
+                    {eliminationPathway.map((step: any, idx: number) => {
+                      const isElim = step.status === "ELIMINATED";
+                      const isConf = step.status === "CONFIRMED";
+                      return (
+                        <div
+                          key={idx}
+                          className={`trail-node ${isElim ? "eliminated" : isConf ? "confirmed" : "shifted"}`}
+                        >
+                          <span className="mono" style={{ fontWeight: 700 }}>#{idx + 1}</span>
+                          <span style={{ fontWeight: 700, color: isElim ? "var(--danger)" : isConf ? "var(--primary)" : "var(--warning)" }}>
+                            {isElim ? "❌ ELIMINATED" : isConf ? "✅ CONFIRMED" : "🟡 SHIFTED"}
+                          </span>
+                          <span className={isElim ? "trail-text-eliminated" : ""} style={{ color: "var(--text-main)" }}>
+                            {step.target_cause_name}
+                          </span>
+                          <span className="muted" style={{ marginLeft: "auto", fontSize: "0.75rem" }}>
+                            {step.test_title}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
 
-              <h3 style={{ marginTop: "1.5rem" }}>AI Likelihood Score</h3>
-              <div className="banner info">{result.reasoning_chain || result.explanation}</div>
-
-              {result.ranked_causes?.slice(0, 6).map((cause: any) => (
-                <details
-                  key={cause.id}
-                  open={openCause === cause.id}
-                  onToggle={(e) => {
-                    if ((e.target as HTMLDetailsElement).open) setOpenCause(cause.id);
-                  }}
-                >
-                  <summary>
-                    {cause.likelihood_pct}% · {cause.name}
-                  </summary>
-                  {cause.match_score != null && <p className="muted">Symptom match: {cause.match_score}</p>}
-                  {(cause.evidence || []).map((item: any, i: number) => {
-                    const d = item.delta || 0;
-                    const mu = item.membership ?? 1;
-                    return (
-                      <p key={i}>
-                        {d > 0 ? `+${d.toFixed(0)}%` : `${d.toFixed(0)}%`} — {item.label}
-                        {mu < 0.999 ? ` · μ=${mu.toFixed(2)}` : ""}
-                      </p>
-                    );
-                  })}
-                </details>
-              ))}
-
-              <h3 style={{ marginTop: "2rem", marginBottom: "1rem", color: "var(--primary)" }}>Recommended Action Plan</h3>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                {(result.sop_plan || result.action_plan)?.map((step: any, i: number) => {
-                  const stepNum = step.step_number || step.step || (i + 1);
-                  return (
-                    <div 
-                      key={stepNum} 
-                      style={{ 
-                        padding: "1.2rem", 
-                        background: "rgba(20,20,35,0.5)",
-                        borderRadius: "10px",
-                        borderLeft: "4px solid var(--glass-border)",
+              {/* Expandable Detailed Cause Matrix */}
+              <details>
+                <summary>Complete Cause Ranking Matrix ({result.ranked_causes?.length || 0} Candidates)</summary>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {result.ranked_causes?.map((cause: any, idx: number) => (
+                    <div
+                      key={cause.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "0.5rem 0.75rem",
+                        background: idx === 0 ? "rgba(16, 185, 129, 0.08)" : "var(--bg-card-alt)",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border-subtle)",
                       }}
                     >
-                      <h4 style={{ margin: "0 0 0.5rem 0", color: "var(--text-main)" }}>
-                        Step {stepNum}: {step.action_title && !step.action_title.startsWith("Step ") ? step.action_title : (step.target_cause && step.target_cause !== "System Detected" ? pretty(step.target_cause) : (step.instruction || step.action_details || "").slice(0, 35) + "...")}
-                      </h4>
-                      <p style={{ marginBottom: "0.5rem", fontSize: "0.95rem" }}>{step.action_details || step.instruction}</p>
+                      <div>
+                        <span className="mono" style={{ fontWeight: 700, color: idx === 0 ? "var(--primary)" : "var(--text-muted)", marginRight: "0.5rem" }}>
+                          #{idx + 1}
+                        </span>
+                        <strong style={{ color: "var(--text-main)" }}>{cause.name}</strong>
+                        <span className="muted" style={{ fontSize: "0.75rem", marginLeft: "0.5rem" }}>
+                          ({cause.family_label || cause.category})
+                        </span>
+                      </div>
+                      <span className="mono" style={{ fontWeight: 700, color: idx === 0 ? "var(--primary)" : "var(--text-main)" }}>
+                        {cause.likelihood_pct}%
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+              </details>
 
-              <button className="btn-ghost" style={{ marginTop: "2rem", width: "100%" }} onClick={pdf}>
-                Download PDF report
+              {/* Expandable Engineering SOP Plan */}
+              <details>
+                <summary>Engineering SOP Action Plan (SOP Standard)</summary>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  {(result.sop_plan || result.action_plan)?.map((step: any, i: number) => (
+                    <div
+                      key={i}
+                      style={{
+                        padding: "0.75rem",
+                        background: "var(--bg-card-alt)",
+                        borderRadius: "6px",
+                        borderLeft: "3px solid var(--secondary)",
+                      }}
+                    >
+                      <h4 style={{ margin: "0 0 0.25rem 0", color: "var(--text-main)" }}>
+                        Step {step.step_number || i + 1}: {step.action_title || pretty(step.target_cause || "Action")}
+                      </h4>
+                      <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                        {step.action_details || step.instruction}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </details>
+
+              {/* Full PDF Download Button */}
+              <button
+                className="btn-ghost"
+                style={{ width: "100%", padding: "0.75rem", fontSize: "0.9rem" }}
+                onClick={pdf}
+              >
+                <span>📄</span> Download Full Engineering PDF Diagnostic Report
               </button>
-            </div>
+            </>
           )}
-        </section>
+        </div>
+
       </div>
     </div>
   );
@@ -940,7 +976,7 @@ function TroubleshootInner() {
 
 export default function TroubleshootPage() {
   return (
-    <Suspense fallback={<p>Loading Troubleshoot…</p>}>
+    <Suspense fallback={<p>Loading Troubleshoot...</p>}>
       <TroubleshootInner />
     </Suspense>
   );
