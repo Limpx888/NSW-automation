@@ -1,4 +1,4 @@
-"""Defect classifier: MobileNetV2 checkpoint with an OpenCV heuristic fallback."""
+"""Vision: YOLOv8 bounding-box detector (primary) + MobileNet/heuristic fallback."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from torchvision import transforms
 
 from model.classes import DEFECT_CLASSES
 from model.train import IMAGENET_MEAN, IMAGENET_STD, build_model
+from backend.app.vision.yolo_detect import detect_yolo, load_yolo, yolo_ready
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CKPT = ROOT / "model" / "checkpoints" / "best.pt"
@@ -35,19 +36,31 @@ def _device() -> torch.device:
 
 
 def load_model(ckpt_path: Path | None = None):
+    """Prefer YOLO; fall back to MobileNet classifier for meta.vision_ready."""
+    if yolo_ready():
+        return load_yolo(ckpt_path) or _load_mobilenet(ckpt_path)
+    return _load_mobilenet(ckpt_path)
+
+
+def _load_mobilenet(ckpt_path: Path | None = None):
     global _MODEL
     path = Path(ckpt_path) if ckpt_path else DEFAULT_CKPT
     if _MODEL is not None:
         return _MODEL
     if not path.exists():
         return None
-    model = build_model()
-    ckpt = torch.load(path, map_location=_device(), weights_only=False)
-    model.load_state_dict(ckpt["state_dict"])
-    model.to(_device())
-    model.eval()
-    _MODEL = model
-    return _MODEL
+    try:
+        ckpt = torch.load(path, map_location=_device(), weights_only=False)
+        if "state_dict" not in ckpt:
+            return None
+        model = build_model()
+        model.load_state_dict(ckpt["state_dict"])
+        model.to(_device())
+        model.eval()
+        _MODEL = model
+        return _MODEL
+    except Exception:
+        return None
 
 
 def decode_image(data: bytes) -> np.ndarray:
@@ -85,7 +98,6 @@ def heuristic_predict(bgr: np.ndarray) -> dict:
         circularity = 4 * np.pi * area / (peri * peri)
         x, y, bw, bh = cv2.boundingRect(c)
         fill = area / (bw * bh + 1e-6)
-        holes = cv2.findContours(255 - fg, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)[0]
         if circularity < 0.45 and n > 1:
             label = "air_bubble_irregular"
         elif fill < 0.45 and ratio > 0.08:
@@ -98,7 +110,6 @@ def heuristic_predict(bgr: np.ndarray) -> dict:
             label = "air_bubble_irregular"
         else:
             label = "under_dispense" if ratio < 0.07 else "over_dispense"
-        _ = holes
     else:
         label = "missing"
 
@@ -109,11 +120,13 @@ def heuristic_predict(bgr: np.ndarray) -> dict:
         "confidence": round(conf, 3),
         "probs": probs,
         "method": "heuristic",
+        "detections": [],
+        "annotated_image_b64": None,
     }
 
 
 def model_predict(bgr: np.ndarray) -> dict | None:
-    model = load_model()
+    model = _load_mobilenet()
     if model is None:
         return None
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
@@ -128,13 +141,46 @@ def model_predict(bgr: np.ndarray) -> dict | None:
         "confidence": round(float(probs_t[idx]), 3),
         "probs": probs,
         "method": "mobilenetv2",
+        "detections": [],
+        "annotated_image_b64": None,
     }
 
 
 def predict_image(bgr: np.ndarray) -> dict:
+    """Primary path: YOLO boxes (class + confidence). Fallback: MobileNet / heuristic."""
+    yolo = None
+    if yolo_ready():
+        yolo = detect_yolo(bgr)
+        if yolo.get("available") and yolo.get("detection_count", 0) > 0:
+            mapped = yolo.get("defect_class")
+            if mapped not in DEFECT_CLASSES:
+                mapped = "air_bubble_irregular"
+            return {
+                "defect_class": mapped,
+                "confidence": float(yolo.get("confidence") or 0.0),
+                "method": "yolo",
+                "source": "yolo",
+                "yolo_class": yolo.get("yolo_class"),
+                "detections": yolo.get("detections") or [],
+                "detection_count": yolo.get("detection_count", 0),
+                "class_counts": yolo.get("class_counts") or {},
+                "annotated_image_b64": yolo.get("annotated_image_b64"),
+                "classes": yolo.get("classes") or [],
+                "probs": {},
+            }
+
     result = model_predict(bgr)
     if result is None:
         result = heuristic_predict(bgr)
+    result["source"] = result.get("method")
+    # Still attach YOLO annotated frame / empty detections when available
+    if yolo and yolo.get("available"):
+        result["annotated_image_b64"] = yolo.get("annotated_image_b64")
+        result["detections"] = yolo.get("detections") or []
+        result["detection_count"] = yolo.get("detection_count", 0)
+        result["class_counts"] = yolo.get("class_counts") or {}
+        result["yolo_attempted"] = True
+        result["method"] = f"{result.get('method')}+yolo"
     return result
 
 
@@ -146,14 +192,15 @@ def quality_assessment(defect_class: str, confidence: float) -> dict:
         "under_dispense": 0.58,
         "inconsistent_volume": 0.65,
         "air_bubble_irregular": 0.6,
-    }[defect_class]
-    overall = int(np.clip(100 - 80 * severity * confidence, 8, 96))
+    }.get(defect_class, 0.6)
+    overall = int(np.clip(100 - 80 * severity * max(confidence, 0.2), 8, 96))
     stars = lambda s: int(np.clip(round(s), 1, 5))
     return {
         "overall_quality_score": overall,
         "shape_consistency": stars(5 - 3 * severity),
         "size_consistency": stars(5 - 2.5 * severity),
-        "defect_risk": stars(1 + 4 * severity * confidence),
+        "defect_risk": stars(1 + 4 * severity * max(confidence, 0.2)),
         "defect_class": defect_class,
         "confidence": confidence,
+        "score": overall,
     }

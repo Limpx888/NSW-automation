@@ -207,6 +207,11 @@ def _material_layer(mask: np.ndarray, material: str, rng: np.random.Generator) -
         rgb = rgb + gloss[..., None]
         opacity = 0.55
         alpha = cv2.GaussianBlur(alpha, (7, 7), 0)
+    elif material == "liquid_metal":
+        color = np.array([210, 215, 220], dtype=np.float32)
+        sheen = 55 * np.clip(np.sin((xx - yy) / 10.0), 0, 1)
+        rgb = color + sheen[..., None] + rng.normal(0, 5, (h, w, 1))
+        opacity = 0.95
     else:
         color = np.array([170, 200, 210], dtype=np.float32)
         rgb = color + rng.normal(0, 5, (h, w, 1))

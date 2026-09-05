@@ -6,7 +6,7 @@ NSW Automation · AI Horizon Solution Challenge 2026
 
 This is a **material-aware dispensing troubleshooting assistant** — not a generic chatbot. It ranks root causes from deterministic NSW/AIM process rules (including the **nozzle ID ≥ 5× largest powder particle** rule for solder paste), optionally classifies defects from a photo, logs cases, and generates a PDF report for engineers.
 
-The UI is a **Next.js** app. Reasoning, vision, and PDF stay in the **FastAPI** backend.
+The UI is a **React (Vite)** app in `frontend-react/`. Reasoning, vision, and PDF stay in the **FastAPI** backend.
 
 ---
 
@@ -15,7 +15,7 @@ The UI is a **Next.js** app. Reasoning, vision, and PDF stay in the **FastAPI** 
 | Requirement | Notes |
 | --- | --- |
 | **Python 3.11+** | Tested on 3.13 |
-| **Node.js 18+** | For the Next.js UI |
+| **Node.js 18+** | For the React UI |
 | **Windows / macOS / Linux** | Commands below use PowerShell; adapt paths if needed |
 | **~2 GB disk** | Synthetic dataset + PyTorch (optional if you skip training) |
 
@@ -47,25 +47,28 @@ uvicorn backend.app.main:app --reload --port 8000
 
 API docs: **http://127.0.0.1:8000/docs**
 
-### 4. Start the Next.js UI (terminal 2)
+### 4. Start the React UI (terminal 2)
 
 ```powershell
-cd frontend-next
+cd frontend-react
 npm install
 npm run dev
 ```
 
-Open **http://localhost:3000**.
+Open **http://localhost:5173**.
 
 ### 5. Run a 2-minute judge demo
 
-1. Dashboard → **Load demo on Troubleshoot** (or Troubleshoot `?demo=1`)
-2. Confirm Type 6 paste, 60 µm nozzle, continuous under-dispense after a nozzle change
-3. Click **Analyse**
-4. Top causes should be **Nozzle ID vs powder size (5× rule)** and **Partial nozzle clog**
-5. **Download PDF report**
+1. Troubleshoot → pick **Solder Paste Dispensing** (or click **Load judge demo**)
+2. Choose **Photo + questions**
+3. Confirm Type 6 paste, 60 µm nozzle, continuous under-dispense after a nozzle change
+4. Click **Analyse**
+5. Top causes should include **Nozzle ID vs powder size (5× rule)** / clog family
+6. **Download PDF report**
 
 Expected explanation includes: *60 µm is below NSW’s 80 µm floor for Type 6 paste.*
+
+Worker flow: **pasting type → photo and/or questionnaire → ranked causes**.
 
 ---
 

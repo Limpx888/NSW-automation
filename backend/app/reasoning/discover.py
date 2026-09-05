@@ -33,6 +33,7 @@ OPTION_LABELS = {
     "silver_epoxy": "Silver epoxy (epoxy)",
     "uv_glue": "UV glue",
     "silicone_gel": "Silicone gel",
+    "liquid_metal": "Liquid metal (Ga/In TIM)",
     "dot": "Dot",
     "line": "Line",
     "dam_fill": "Dam and fill",
@@ -59,6 +60,8 @@ OPTION_LABELS = {
     "immediate": "From the first shots / right away",
     "from_start": "Wrong from the first shot",
     "got_worse": "Got worse after running a while",
+    "after_idle": "After the tip idles",
+    "after_long_run": "After a long run",
     "unknown": "Not sure",
     "blocking": "UV-blocking (amber / black)",
     "clear": "Clear barrel or tip",
@@ -175,9 +178,27 @@ def next_question(
     by information_gain. If use_llm is true, the model may only pick among those
     eligible ids — it cannot invent questions.
     """
+    from backend.app.applications import get_application
+
+    app = get_application(answers.get("application"))
+    allowed_materials = None
+    if app and app.get("material_choices"):
+        allowed_materials = set(app["material_choices"])
+
     for q in all_questions():
         if not _is_answered(answers, q["id"]):
-            return q
+            node = dict(q)
+            if node["id"] == "material" and allowed_materials:
+                opts = [o for o in (node.get("options") or []) if o in allowed_materials]
+                node["options"] = opts
+                node["choices"] = [{"id": o, "label": label_for(str(o))} for o in opts]
+                node["prompt"] = "Which dam / fill material are you using?"
+            if node["id"] == "pattern" and app and app.get("patterns"):
+                opts = [o for o in (node.get("options") or []) if o in set(app["patterns"])]
+                if opts:
+                    node["options"] = opts
+                    node["choices"] = [{"id": o, "label": label_for(str(o))} for o in opts]
+            return node
 
     candidates = eligible_followups(answers)
     required = [q for q in candidates if not q.get("optional")]

@@ -15,7 +15,7 @@ def test_render_every_combo():
 
 def test_generate_tiny_dataset(tmp_path: Path):
     summary = generate_dataset(tmp_path, per_combo=1, seed=1, preview_dir=tmp_path / "preview")
-    assert summary["total"] == 6 * 4 * 3
+    assert summary["total"] == len(DEFECT_CLASSES) * len(MATERIALS) * len(PATTERNS)
     assert (tmp_path / "labels.csv").exists()
     assert summary["by_split"]["train"] + summary["by_split"]["val"] + summary["by_split"]["test"] == summary["total"]
     assert any((tmp_path / "preview").glob("*.png"))

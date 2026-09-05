@@ -9,7 +9,7 @@ DEFECT_CLASSES = [
     "air_bubble_irregular",
 ]
 
-MATERIALS = ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel"]
+MATERIALS = ["solder_paste", "silver_epoxy", "uv_glue", "silicone_gel", "liquid_metal"]
 PATTERNS = ["dot", "line", "dam_fill"]
 BACKGROUNDS = ["pcb", "ceramic", "metal"]
 

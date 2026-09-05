@@ -9,6 +9,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
+from backend.app.applications import DIAGNOSIS_MODES, list_applications, resolve_answers
 from backend.app.db.cases import (
     connect,
     get_case_by_session_id,
@@ -25,6 +26,7 @@ from backend.app.reasoning.explain_llm import explain_with_llm
 from backend.app.reasoning.rank_causes import explain_rules, load_rules, rank_causes
 from backend.app.reports.pdf import build_pdf
 from backend.app.vision.predict import decode_image, load_model, predict_image
+from backend.app.vision.yolo_detect import yolo_ready
 
 ROOT = Path(__file__).resolve().parents[2]
 SAMPLES = ROOT / "data" / "samples"
@@ -84,6 +86,9 @@ def meta() -> dict:
         "dynamic_followups": rules.get("dynamic_followups", []),
         "cause_families": rules.get("cause_families", {}),
         "evidence_rules": rules.get("evidence_rules", []),
+        "applications": list_applications(),
+        "diagnosis_modes": DIAGNOSIS_MODES,
+        "nsw_home": "https://nswautomation.com/NSW/",
         "score_formula": (
             "Score(cause) = material×defect baseline × fuzzy multipliers "
             "+ Σ (symptom evidence × μ). Likelihoods then sum to 100%."
@@ -92,7 +97,14 @@ def meta() -> dict:
         "sample_count": len(_sample_names()),
         "case_count": case_count,
         "vision_ready": load_model() is not None,
+        "yolo_ready": yolo_ready(),
+        "vision_backend": "yolo" if yolo_ready() else "mobilenet_or_heuristic",
     }
+
+
+@app.get("/applications")
+def applications() -> dict:
+    return {"applications": list_applications(), "modes": DIAGNOSIS_MODES}
 
 
 @app.get("/samples")
@@ -111,7 +123,7 @@ def get_sample(name: str) -> FileResponse:
 
 @app.post("/discover")
 def discover(payload: dict) -> dict:
-    answers = dict(payload or {})
+    answers = resolve_answers(dict(payload or {}))
     use_llm = bool(answers.pop("use_llm", False))
     include_optional = answers.pop("include_optional", True)
     if include_optional is None:
@@ -138,7 +150,7 @@ async def predict(file: UploadFile = File(...)) -> dict:
 
 @app.post("/diagnose")
 def diagnose(symptoms: dict) -> dict:
-    result = rank_causes(symptoms)
+    result = rank_causes(resolve_answers(symptoms))
     result["explanation"] = explain_with_llm(result)
     result["explanation_deterministic"] = explain_rules(result)
     result["similar"] = similar_cases(result["material"], result["defect_class"])

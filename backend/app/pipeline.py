@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 
+from backend.app.applications import resolve_answers
 from backend.app.db.cases import log_case, similar_cases
 from backend.app.reasoning.discover import apply_amount
 from backend.app.reasoning.explain_llm import explain_with_llm
@@ -16,7 +17,7 @@ from backend.app.vision.predict import predict_image, quality_assessment
 
 
 def run_session(answers: dict[str, Any], image_bgr: np.ndarray | None = None) -> dict[str, Any]:
-    answers = apply_amount(dict(answers))
+    answers = apply_amount(resolve_answers(dict(answers)))
     vision = None
     if image_bgr is not None:
         vision = predict_image(image_bgr)
