@@ -1,0 +1,10 @@
+{
+  "description": "DARA streamlines defect analysis and reporting for manufacturers, offering AI-driven insights, dashboards, and historical data to enhance operational efficiency.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
