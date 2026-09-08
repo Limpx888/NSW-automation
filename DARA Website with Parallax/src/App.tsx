@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import SolderPasteScan from './SolderPasteScan'
 
 // ─── Global scroll state ───────────────────────────────────────────────────────
 function useScrollY() {
@@ -75,10 +76,27 @@ function useInView(threshold = 0.12) {
   return { ref, inView }
 }
 
+type AppView = 'home' | 'scan' | 'reports' | 'history'
+
+const NAV_ITEMS: { label: string; view: AppView }[] = [
+  { label: 'Dashboard', view: 'home' },
+  { label: 'Solder Paste Scan', view: 'scan' },
+  { label: 'Reports', view: 'reports' },
+  { label: 'History', view: 'history' },
+]
+
 // ─── Nav ───────────────────────────────────────────────────────────────────────
-function Nav() {
+function Nav({
+  view,
+  onNavigate,
+  forceSolid = false,
+}: {
+  view: AppView
+  onNavigate: (view: AppView) => void
+  forceSolid?: boolean
+}) {
   const scrollY = useScrollY()
-  const scrolled = scrollY > 40
+  const scrolled = forceSolid || scrollY > 40 || view !== 'home'
 
   return (
     <nav
@@ -88,11 +106,15 @@ function Nav() {
         padding: '0 40px', height: 64,
         background: scrolled ? 'rgba(255,255,255,0.88)' : 'transparent',
         backdropFilter: scrolled ? 'blur(16px)' : 'none',
-        borderBottom: scrolled ? '1px solid rgba(79,70,229,0.08)' : 'none',
+        borderBottom: scrolled ? '1px solid rgba(11,104,115,0.1)' : 'none',
         transition: 'background 0.3s, backdrop-filter 0.3s, border-color 0.3s',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <button
+        type="button"
+        onClick={() => onNavigate('home')}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+      >
           <div style={{ width: 32, height: 32, borderRadius: 8, background: '#0B6873', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M3 12L6 6L9 9L12 4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
@@ -100,18 +122,44 @@ function Nav() {
           </svg>
         </div>
         <span style={{ fontWeight: 800, fontSize: 17, color: scrolled ? '#1F2033' : 'white', letterSpacing: '-0.03em', transition: 'color 0.3s' }}>DARA</span>
-      </div>
+      </button>
 
       <div style={{ display: 'flex', gap: 32 }}>
-        {['Dashboard', 'Solder Paste Scan', 'Reports', 'History'].map(item => (
-          <a key={item} href="#" style={{ fontSize: 13, fontWeight: 500, color: scrolled ? 'rgba(31,32,51,0.6)' : 'rgba(255,255,255,0.75)', textDecoration: 'none', transition: 'color 0.3s' }}
-            onMouseEnter={e => (e.currentTarget.style.color = scrolled ? '#1F2033' : 'white')}
-            onMouseLeave={e => (e.currentTarget.style.color = scrolled ? 'rgba(31,32,51,0.6)' : 'rgba(255,255,255,0.75)')}
-          >{item}</a>
-        ))}
+        {NAV_ITEMS.map(item => {
+          const active = view === item.view
+          const idle = scrolled ? 'rgba(31,32,51,0.6)' : 'rgba(255,255,255,0.75)'
+          const hover = scrolled ? '#1F2033' : 'white'
+          return (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => onNavigate(item.view)}
+              style={{
+                fontSize: 13,
+                fontWeight: active ? 700 : 500,
+                color: active ? (scrolled ? '#0B6873' : 'white') : idle,
+                textDecoration: 'none',
+                transition: 'color 0.3s',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                borderBottom: active ? `2px solid ${scrolled ? '#0B6873' : 'rgba(255,255,255,0.85)'}` : '2px solid transparent',
+                paddingBottom: 2,
+              }}
+              onMouseEnter={e => { if (!active) e.currentTarget.style.color = hover }}
+              onMouseLeave={e => { if (!active) e.currentTarget.style.color = idle }}
+            >
+              {item.label}
+            </button>
+          )
+        })}
       </div>
 
-      <button style={{ background: '#D66A2C', color: 'white', border: 'none', borderRadius: 999, padding: '9px 22px', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'background 0.2s, transform 0.2s' }}
+      <button
+        type="button"
+        onClick={() => onNavigate('scan')}
+        style={{ background: '#D66A2C', color: 'white', border: 'none', borderRadius: 999, padding: '9px 22px', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'background 0.2s, transform 0.2s' }}
         onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#B85320'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#D66A2C'; (e.currentTarget as HTMLButtonElement).style.transform = '' }}
       >Get Started</button>
@@ -120,7 +168,7 @@ function Nav() {
 }
 
 // ─── Hero — cinematic parallax hero for PCB solder-paste inspection ──────────
-function Hero() {
+function Hero({ onStartScan }: { onStartScan: () => void }) {
   const { ref, bgOffset } = useParallaxBg(0.45)
   const { ref: cardRef, fgOffset } = useParallaxFg(-0.12)
   const scrollY = useScrollY()
@@ -176,11 +224,17 @@ function Hero() {
         </p>
 
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button style={{ background: '#D66A2C', color: 'white', border: 'none', borderRadius: 999, padding: '14px 32px', fontSize: 15, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 8px 32px rgba(214,106,44,0.4)' }}
+          <button
+            type="button"
+            onClick={onStartScan}
+            style={{ background: '#D66A2C', color: 'white', border: 'none', borderRadius: 999, padding: '14px 32px', fontSize: 15, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 8px 32px rgba(214,106,44,0.4)' }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#B85320'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#D66A2C'; (e.currentTarget as HTMLButtonElement).style.transform = '' }}
           >Start a line scan</button>
-          <button style={{ background: 'rgba(255,255,255,0.1)', color: 'white', border: '1.5px solid rgba(255,255,255,0.25)', borderRadius: 999, padding: '14px 32px', fontSize: 15, fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(8px)', transition: 'all 0.2s' }}
+          <button
+            type="button"
+            onClick={() => document.getElementById('inspection-flow')?.scrollIntoView({ behavior: 'smooth' })}
+            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', border: '1.5px solid rgba(255,255,255,0.25)', borderRadius: 999, padding: '14px 32px', fontSize: 15, fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(8px)', transition: 'all 0.2s' }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.18)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)' }}
           >See the inspection flow ↓</button>
@@ -524,7 +578,7 @@ function StatsBand() {
 }
 
 // ─── CTA ───────────────────────────────────────────────────────────────────────
-function CTA() {
+function CTA({ onStartScan }: { onStartScan: () => void }) {
   const { ref: sectionRef, bgOffset } = useParallaxBg(0.3)
   const { ref: textRef, inView } = useInView(0.2)
 
@@ -551,11 +605,17 @@ function CTA() {
           Join production teams using DARA to cut rework, close nonconformances faster, and stabilize every dispense.
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button style={{ background: 'white', color: '#0B6873', border: 'none', borderRadius: 999, padding: '14px 32px', fontSize: 15, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 24px rgba(0,0,0,0.2)' }}
+          <button
+            type="button"
+            onClick={onStartScan}
+            style={{ background: 'white', color: '#0B6873', border: 'none', borderRadius: 999, padding: '14px 32px', fontSize: 15, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 24px rgba(0,0,0,0.2)' }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 32px rgba(0,0,0,0.25)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = ''; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 24px rgba(0,0,0,0.2)' }}
           >Start a line review</button>
-          <button style={{ background: 'rgba(255,255,255,0.12)', color: 'white', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 999, padding: '14px 32px', fontSize: 15, fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(8px)', transition: 'all 0.2s' }}
+          <button
+            type="button"
+            onClick={() => document.getElementById('inspection-flow')?.scrollIntoView({ behavior: 'smooth' })}
+            style={{ background: 'rgba(255,255,255,0.12)', color: 'white', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 999, padding: '14px 32px', fontSize: 15, fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(8px)', transition: 'all 0.2s' }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.2)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.12)' }}
           >Explore the workflow</button>
@@ -591,79 +651,125 @@ function Footer() {
   )
 }
 
+function PlaceholderView({ title, body, onBack }: { title: string; body: string; onBack: () => void }) {
+  return (
+    <section style={{ minHeight: '100vh', padding: '120px 40px 80px', background: '#F5F8F7' }}>
+      <div style={{ maxWidth: 720, margin: '0 auto' }}>
+        <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', color: '#0B6873', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 24, padding: 0 }}>
+          ← Back to dashboard
+        </button>
+        <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(2.2rem, 4vw, 3rem)', fontWeight: 800, color: '#102A43', marginBottom: 12 }}>{title}</h1>
+        <p style={{ fontSize: 16, color: 'rgba(22,32,42,0.6)', lineHeight: 1.65 }}>{body}</p>
+      </div>
+    </section>
+  )
+}
+
 // ─── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
+  const [view, setView] = useState<AppView>('home')
+
+  const navigate = (next: AppView) => {
+    setView(next)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   return (
-    <div style={{ fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" }}>
-      <Nav />
-      <Hero />
-      <LogoRow />
+    <div style={{ fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
+      <Nav view={view} onNavigate={navigate} forceSolid={view !== 'home'} />
 
-      <FeatureSection
-        eyebrow="Dashboard"
-        heading={<>Every metric,<br />one command center</>}
-        body="Real-time KPI tiles, trend sparklines, and configurable alerts give your team an instant picture of paste-deposition health across every line and shift."
-        bullets={[
-          'Sub-15-second refresh on paste volume and defect KPIs across every line',
-          'Threshold-based alerts for bridging, skips, smears, and under-deposit',
-          'Rolling run-history views with anomaly detection overlays',
-        ]}
-        imgSrc="https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&h=800&fit=crop&auto=format"
-        imgAlt="Printed circuit board on a production line"
-        bgColor="#F7F6FB"
-        MockupComponent={MiniDashboard}
-      />
+      {view === 'home' && (
+        <>
+          <Hero onStartScan={() => navigate('scan')} />
+          <LogoRow />
 
-      <FeatureSection
-        eyebrow="Solder Paste Vision Scan"
-        heading={<>Machine-vision<br />detection at every stage</>}
-        body="DARA's vision engine inspects pad coverage, deposit volume, bridging, smearing, and placement alignment — flagging anomalies before boards reach rework."
-        bullets={[
-          'Sub-second detection latency on live production feeds',
-          'Confidence scoring with explainable inspection overlays per flag',
-          '98.7% accuracy across 14 solder-paste defect classes',
-        ]}
-        imgSrc="https://images.unsplash.com/photo-1563770660941-10a04f7d7f08?w=1200&h=800&fit=crop&auto=format"
-        imgAlt="Electronics assembly line inspection"
-        bgColor="white"
-        flipped
-        MockupComponent={MiniAIScan}
-      />
+          <div id="inspection-flow">
+            <FeatureSection
+              eyebrow="Dashboard"
+              heading={<>Every metric,<br />one command center</>}
+              body="Real-time KPI tiles, trend sparklines, and configurable alerts give your team an instant picture of paste-deposition health across every line and shift."
+              bullets={[
+                'Sub-15-second refresh on paste volume and defect KPIs across every line',
+                'Threshold-based alerts for bridging, skips, smears, and under-deposit',
+                'Rolling run-history views with anomaly detection overlays',
+              ]}
+              imgSrc="https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&h=800&fit=crop&auto=format"
+              imgAlt="Printed circuit board on a production line"
+              bgColor="#F7F6FB"
+              MockupComponent={MiniDashboard}
+            />
 
-      <FeatureSection
-        eyebrow="Root Cause & Reports"
-        heading={<>Audit-ready reports<br />generated in seconds</>}
-        body="From line-side quality reviews to customer-ready investigations, DARA turns defect evidence into structured, signable reports with one click."
-        bullets={[
-          'PDF, XLSX, and CSV exports for quality and production reviews',
-          '5-Why and fishbone root-cause visualizations built automatically',
-          'Corrective-action ownership and sign-off in one workflow',
-        ]}
-        imgSrc="https://images.unsplash.com/photo-1579532582937-16c108930bf6?w=1200&h=800&fit=crop&auto=format"
-        imgAlt="Quality report with manufacturing data"
-        bgColor="#F7F6FB"
-        MockupComponent={MiniReport}
-      />
+            <FeatureSection
+              eyebrow="Solder Paste Vision Scan"
+              heading={<>Machine-vision<br />detection at every stage</>}
+              body="DARA's vision engine inspects pad coverage, deposit volume, bridging, smearing, and placement alignment — flagging anomalies before boards reach rework."
+              bullets={[
+                'Sub-second detection latency on live production feeds',
+                'Confidence scoring with explainable inspection overlays per flag',
+                '98.7% accuracy across 14 solder-paste defect classes',
+              ]}
+              imgSrc="https://images.unsplash.com/photo-1563770660941-10a04f7d7f08?w=1200&h=800&fit=crop&auto=format"
+              imgAlt="Electronics assembly line inspection"
+              bgColor="white"
+              flipped
+              MockupComponent={MiniAIScan}
+            />
 
-      <FeatureSection
-        eyebrow="Runs & History"
-        heading={<>Full case history —<br />search, filter, learn</>}
-        body="Every dispense run, investigation, and corrective action lives in a searchable, timestamped ledger. Spot recurring patterns before they become line stoppages."
-        bullets={[
-          'Run-over-run defect volume with shift and line comparison',
-          'Full-text search across defect evidence and notes',
-          'Corrective-action linkage — every fix tied to its root cause',
-        ]}
-        imgSrc="https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=1200&h=800&fit=crop&auto=format"
-        imgAlt="Engineer monitoring an electronics production line"
-        bgColor="white"
-        flipped
-        MockupComponent={MiniHistory}
-      />
+            <FeatureSection
+              eyebrow="Root Cause & Reports"
+              heading={<>Audit-ready reports<br />generated in seconds</>}
+              body="From line-side quality reviews to customer-ready investigations, DARA turns defect evidence into structured, signable reports with one click."
+              bullets={[
+                'PDF, XLSX, and CSV exports for quality and production reviews',
+                '5-Why and fishbone root-cause visualizations built automatically',
+                'Corrective-action ownership and sign-off in one workflow',
+              ]}
+              imgSrc="https://images.unsplash.com/photo-1579532582937-16c108930bf6?w=1200&h=800&fit=crop&auto=format"
+              imgAlt="Quality report with manufacturing data"
+              bgColor="#F7F6FB"
+              MockupComponent={MiniReport}
+            />
 
-      <StatsBand />
-      <CTA />
-      <Footer />
+            <FeatureSection
+              eyebrow="Runs & History"
+              heading={<>Full case history —<br />search, filter, learn</>}
+              body="Every dispense run, investigation, and corrective action lives in a searchable, timestamped ledger. Spot recurring patterns before they become line stoppages."
+              bullets={[
+                'Run-over-run defect volume with shift and line comparison',
+                'Full-text search across defect evidence and notes',
+                'Corrective-action linkage — every fix tied to its root cause',
+              ]}
+              imgSrc="https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=1200&h=800&fit=crop&auto=format"
+              imgAlt="Engineer monitoring an electronics production line"
+              bgColor="white"
+              flipped
+              MockupComponent={MiniHistory}
+            />
+          </div>
+
+          <StatsBand />
+          <CTA onStartScan={() => navigate('scan')} />
+          <Footer />
+        </>
+      )}
+
+      {view === 'scan' && <SolderPasteScan onBack={() => navigate('home')} />}
+
+      {view === 'reports' && (
+        <PlaceholderView
+          title="Reports"
+          body="Report generation will live here. For now, start from Solder Paste Scan to choose a dispense pattern."
+          onBack={() => navigate('home')}
+        />
+      )}
+
+      {view === 'history' && (
+        <PlaceholderView
+          title="History"
+          body="Run history and case lookup will live here. Choose a pattern from Solder Paste Scan to begin a diagnosis."
+          onBack={() => navigate('home')}
+        />
+      )}
     </div>
   )
 }

@@ -57,3 +57,9 @@ body {
 .fade-in {
   animation: float-up 0.7s ease forwards;
 }
+
+@media (max-width: 900px) {
+  .scan-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
