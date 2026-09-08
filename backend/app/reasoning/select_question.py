@@ -37,7 +37,7 @@ def pick_followup_id(answers: dict[str, Any], candidates: list[dict[str, Any]]) 
     try:
         client = genai.Client(api_key=api_key)
         resp = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash-lite",
             contents=f"Known answers: {known}\n\nCandidates:\n{catalog}",
             config=types.GenerateContentConfig(
                 system_instruction="You pick the next diagnostic question for a dispensing engineer. Choose the id that most splits remaining root causes.",
@@ -61,6 +61,7 @@ def pick_followup_id(answers: dict[str, Any], candidates: list[dict[str, Any]]) 
         payload = json.loads(resp.text)
         token = str(payload.get("question_id") or "").strip()
         if token in allowed:
+            print(f"\n[AI Dynamic Routing] Gemini selected question: '{token}' (Reason: {payload.get('reason')})\n")
             return token
     except Exception:
         return None

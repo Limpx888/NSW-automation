@@ -258,6 +258,20 @@ h3 {
   border: 1px solid #b6e6cb;
 }
 
+.analysis-basis {
+  display: grid;
+  gap: 0.2rem;
+  margin: 1rem 0;
+  padding: 0.8rem 0.9rem;
+  border-left: 3px solid var(--orange);
+  background: #fffaf2;
+}
+
+.analysis-basis span,
+.analysis-basis small {
+  color: var(--muted);
+}
+
 .card {
   background: var(--bg-elevated);
   border: 1px solid var(--line);

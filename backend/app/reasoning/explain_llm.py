@@ -38,7 +38,7 @@ def explain_with_llm(result: dict[str, Any]) -> str:
     try:
         client = genai.Client(api_key=api_key)
         resp = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction="Be concise, technical, and grounded in the provided rules only.",
@@ -48,5 +48,6 @@ def explain_with_llm(result: dict[str, Any]) -> str:
         )
         text = (resp.text or "").strip()
         return text if text else base
-    except Exception:
+    except Exception as e:
+        print(f"\n!!! Gemini API Error (explain_llm): {e} !!!\n")
         return base

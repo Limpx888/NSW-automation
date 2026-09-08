@@ -33,6 +33,17 @@ VERIFICATION_ACTIONS: dict[str, dict[str, Any]] = {
         "penalty_factor": 0.20,
         "escalate_factor": 1.30,
     },
+    "thixotropic_rebuild": {
+        "action_id": "dummy_purge_shot",
+        "target_cause": "thixotropic_rebuild",
+        "title": "Dummy Purge / Shear Rebuild",
+        "cost_badge": " 15s · Zero Cost",
+        "instruction": "Execute 3 to 5 continuous dummy dispense shots off-board. This applies mechanical shear stress to break down the thickened paste structure and restore nominal viscosity.",
+        "expected_resolved": "Dispense dot volume immediately returns to nominal target size.",
+        "expected_unresolved": "Volume remains undersized; a physical nozzle restriction is likely.",
+        "penalty_factor": 0.10,
+        "escalate_factor": 1.40,
+    },
     "powder_nozzle_mismatch": {
         "action_id": "five_x_gauge_check",
         "target_cause": "powder_nozzle_mismatch",

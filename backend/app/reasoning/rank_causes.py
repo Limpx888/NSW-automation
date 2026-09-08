@@ -216,8 +216,11 @@ def _powder_factors(symptoms: dict[str, Any], rules: dict[str, Any]) -> tuple[di
         min_id = spec["nsw_min_nozzle_um"]
         five_x = 5 * spec["d_max_um"]
         if nozzle_id < min_id or nozzle_id < five_x:
-            extra["powder_nozzle_mismatch"] = extra.get("powder_nozzle_mismatch", 1.0) * 2.2
-            extra["nozzle_partial_clog"] = extra.get("nozzle_partial_clog", 1.0) * 1.4
+            # INCREASE mismatch multiplier to 5.0 (Absolute Dominance)
+            extra["powder_nozzle_mismatch"] = extra.get("powder_nozzle_mismatch", 1.0) * 5.0 
+            # DECREASE generic clog multiplier so it doesn't steal the #1 spot
+            extra["nozzle_partial_clog"] = extra.get("nozzle_partial_clog", 1.0) * 0.5 
+            
             rule = rules["five_x_rule"]
             fired.append(
                 {

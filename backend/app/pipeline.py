@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 from typing import Any
 
 import numpy as np
@@ -29,10 +31,30 @@ def run_session(answers: dict[str, Any], image_bgr: np.ndarray | None = None) ->
 
     result = rank_causes(answers)
     result["explanation"] = explain_with_llm(result)
+
+    if os.getenv("GEMINI_API_KEY", "").strip():
+        time.sleep(8)
+
     result["explanation_deterministic"] = explain_rules(result)
+    result["decision_engine"] = "deterministic_rules"
+    result["decision_engine_label"] = "NSW process rules and evidence scoring"
+    result["explanation_engine"] = "gemini" if os.getenv("GEMINI_API_KEY", "").strip() else "deterministic_rules"
     
     # Generate the LLM structured SOP plan
     result["sop_plan"] = generate_action_plan(result)
+
+    if result.get("sop_plan"):
+        for i, cause in enumerate(result.get("ranked_causes", [])):
+            if i < len(result["sop_plan"]):
+                sop = result["sop_plan"][i]
+                # Format the structured text to force the frontend to display it
+                rich_text = (
+                    f"Estimated Time: {sop.get('estimated_time', 'N/A')} | 🚨 Urgency: {sop.get('urgency', 'Normal')}\n"
+                    f"Action Details: {sop.get('action_details', cause.get('check'))}\n"
+                    f"Reasoning: {sop.get('reasoning', '')}"
+                )
+                # Overwrite the original plain hardcoded instruction
+                cause["check"] = rich_text
     
     # Attach initial low-cost counter-test
     result["initial_test"] = select_next_verification_action(result.get("ranked_causes", []), [])

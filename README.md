@@ -139,13 +139,17 @@ uvicorn backend.app.main:app --reload --port 8000
 ```powershell
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/diagnose" -ContentType "application/json" -Body (@{
   material = "solder_paste"
-  pattern = "dot"
-  amount = "too_small"
-  frequency = "continuous"
-  recent_change = "nozzle"
-  location = "multiple"
   powder_type = "T6"
   nozzle_id_um = 60
+  ambient_temp_c = 24.5
+  pot_life_hours = 1.0
+  answers = @{
+    pattern = "dot"
+    amount = "too_small"
+    frequency = "continuous"
+    recent_change = "nozzle"
+    location = "multiple"
+  }
 } | ConvertTo-Json)
 ```
 
@@ -165,10 +169,10 @@ python scripts/integration_demo.py
 
 ## Optional: richer explanation text (LLM)
 
-Ranking is **always deterministic**. If you set an OpenAI API key, the app can rewrite the explanation and optionally pick among follow-up questions:
+Ranking is **always deterministic**. If you set a Gemini API key, the app can rewrite the explanation and generate the SOP wording:
 
 ```powershell
-$env:OPENAI_API_KEY = "sk-..."
+$env:GEMINI_API_KEY = "..."
 uvicorn backend.app.main:app --reload --port 8000
 ```
 

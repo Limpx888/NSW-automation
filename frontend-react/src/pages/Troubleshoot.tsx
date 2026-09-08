@@ -597,6 +597,13 @@ export default function Troubleshoot() {
               {result.application_title || selectedApp?.title || pretty(result.material)} ·{" "}
               {pretty(result.defect_class)} · quality {result.quality?.score ?? result.quality?.overall_quality_score ?? "—"}
             </p>
+            <div className="analysis-basis">
+              <strong>What determines this answer?</strong>
+              <span>{result.decision_engine_label || "NSW process rules and evidence scoring"}</span>
+              <small>
+                The ranked causes are not selected by an LLM. A vision model may classify the photo, while {result.explanation_engine === "gemini" ? "Gemini only rewrites the explanation and SOP wording." : "the explanation stays deterministic because no Gemini key is configured."}
+              </small>
+            </div>
             {result.vision && (
               <p>
                 Vision: <strong>{pretty(result.vision.yolo_class || result.vision.defect_class)}</strong> (

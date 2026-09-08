@@ -1,4 +1,4 @@
-"""Generate an interactive Troubleshooting Action Plan (SOP) via Gemini 2.5 Flash."""
+"""Generate an interactive Troubleshooting Action Plan (SOP) via Gemini 3.6 Flash."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def generate_action_plan(result: dict[str, Any]) -> list[dict[str, Any]]:
     try:
         client = genai.Client(api_key=api_key)
         resp = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction="You are an expert SMT and dispensing technician generating structured operating procedures.",
@@ -91,5 +91,6 @@ def generate_action_plan(result: dict[str, Any]) -> list[dict[str, Any]]:
         
         payload = json.loads(resp.text)
         return payload.get("troubleshooting_plan", fallback_plan)
-    except Exception:
+    except Exception as e:
+        print(f"\n!!! Gemini API Error (generate_sop): {e} !!!\n")
         return fallback_plan

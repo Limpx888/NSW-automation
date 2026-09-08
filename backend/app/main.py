@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
+load_dotenv("backend/.env")
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +29,7 @@ from backend.app.reasoning.discover import core_progress, is_complete, next_ques
 from backend.app.reasoning.explain_llm import explain_with_llm
 from backend.app.reasoning.rank_causes import explain_rules, load_rules, rank_causes
 from backend.app.reports.pdf import build_pdf
+from backend.app.schemas import SolderPasteDiagnosisRequest
 from backend.app.vision.predict import decode_image, load_model, predict_image
 from backend.app.vision.yolo_detect import yolo_ready
 
@@ -122,13 +127,18 @@ def get_sample(name: str) -> FileResponse:
 
 
 @app.post("/discover")
-def discover(payload: dict) -> dict:
+def discover(payload: dict) -> dict: 
     answers = resolve_answers(dict(payload or {}))
-    use_llm = bool(answers.pop("use_llm", False))
+    
+    api_key_exists = bool(os.getenv("GEMINI_API_KEY", "").strip())
+    use_llm = bool(answers.pop("use_llm", api_key_exists))
+    
     include_optional = answers.pop("include_optional", True)
     if include_optional is None:
         include_optional = True
+        
     nxt = next_question(answers, include_optional=bool(include_optional), use_llm=use_llm)
+    
     return {
         "complete": is_complete(answers),
         "next": nxt,
@@ -149,10 +159,14 @@ async def predict(file: UploadFile = File(...)) -> dict:
 
 
 @app.post("/diagnose")
-def diagnose(symptoms: dict) -> dict:
+def diagnose(request: SolderPasteDiagnosisRequest) -> dict:
+    symptoms = request.to_engine_input()
     result = rank_causes(resolve_answers(symptoms))
     result["explanation"] = explain_with_llm(result)
     result["explanation_deterministic"] = explain_rules(result)
+    result["decision_engine"] = "deterministic_rules"
+    result["decision_engine_label"] = "NSW process rules and evidence scoring"
+    result["explanation_engine"] = "gemini" if os.getenv("GEMINI_API_KEY", "").strip() else "deterministic_rules"
     result["similar"] = similar_cases(result["material"], result["defect_class"])
     return result
 

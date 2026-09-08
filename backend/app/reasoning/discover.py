@@ -21,52 +21,30 @@ AMOUNT_TO_DEFECT = {
 }
 
 CORE_DIMENSIONS = [
-    ("material", "Material type"),
-    ("amount", "Defect appearance"),
-    ("frequency", "Frequency and pattern"),
-    ("recent_change", "Recent process changes"),
-    ("location", "Spatial distribution"),
+    ("amount", "Defect Appearance"),
+    ("frequency", "Defect Frequency"),            
+    ("timing", "Machine Idle & Pause State"),     # Targets Thixotropic Rebuild
+    ("pot_life", "Syringe Open Time Status"),     # Targets Flux Separation
+    ("nozzle_change", "Recent Hardware Changes"), # Targets 5x Rule Violations
 ]
 
 OPTION_LABELS = {
-    "solder_paste": "Solder paste",
-    "silver_epoxy": "Silver epoxy (epoxy)",
-    "uv_glue": "UV glue",
-    "silicone_gel": "Silicone gel",
-    "liquid_metal": "Liquid metal (Ga/In TIM)",
-    "dot": "Dot",
-    "line": "Line",
-    "dam_fill": "Dam and fill",
-    "too_small": "Too small / under-dispense",
-    "too_large": "Too large / over-dispense",
-    "missing": "Missing shot",
-    "inconsistent": "Inconsistent sizing",
-    "spreading": "Spreading beyond the area",
-    "irregular": "Air bubble / irregular shape",
-    "stringing": "Stringing / tails on retract",
-    "misaligned": "Misaligned dots",
-    "broken_line": "Broken dispensing line",
-    "occasional": "Occasional / random",
-    "continuous": "Continuous / every shot",
-    "none": "No recent change",
-    "material": "Material batch changed",
-    "nozzle": "Nozzle tip changed",
-    "settings": "Pressure / time / suck-back settings changed",
-    "temperature": "Operating temperature changed",
-    "single": "One location / one point",
-    "multiple": "Several points or boards",
-    "after_restart": "Right after machine restart",
-    "after_runtime": "Only after running for some time",
-    "immediate": "From the first shots / right away",
-    "from_start": "Wrong from the first shot",
-    "got_worse": "Got worse after running a while",
-    "after_idle": "After the tip idles",
-    "after_long_run": "After a long run",
-    "unknown": "Not sure",
-    "blocking": "UV-blocking (amber / black)",
-    "clear": "Clear barrel or tip",
-    "yes": "Yes",
-    "no": "No",
+    # Symptoms
+    "too_small": "Undersized dot / skipped shot",
+    "spreading": "Severe slumping / bridging pads",
+    "irregular": "Satellite dots / voiding",
+    "stringing": "Dog-ears / tailing on Z-retract",
+    
+    # Thixotropic Timing (Crucial for Solder Paste)
+    "after_idle": "Happens on the first dot after machine pauses",
+    "continuous": "Happens consistently across the whole board",
+    
+    # Pot-Life & Separation
+    "fresh_thawed": "Freshly thawed (< 2 hours)",
+    "long_open": "Sitting on machine for > 4 hours",
+    
+    # Hardware
+    "new_nozzle": "Just swapped to a smaller micro-nozzle",
 }
 
 SKIPPED = "_skipped"
