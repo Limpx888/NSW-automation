@@ -22,11 +22,11 @@ export default defineConfig(({ mode }) => {
       figmaSiteConfiguration(siteConfiguration),
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
-      figmaMakeKitPlugin({ storiesGlob: '/src/**/*.stories.{ts,tsx,js,jsx}' }),
+      figmaMakeKitPlugin({ storiesGlob: '/frontend/src/**/*.stories.{ts,tsx,js,jsx}' }),
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(__dirname, './frontend/src'),
       },
     },
     server: {
