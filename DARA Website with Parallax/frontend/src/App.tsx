@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import SolderPasteScan from './SolderPasteScan'
+import { HistoryView, ReportsView } from './CaseWorkspace'
 
 // ─── Global scroll state ───────────────────────────────────────────────────────
 function useScrollY() {
@@ -651,20 +652,6 @@ function Footer() {
   )
 }
 
-function PlaceholderView({ title, body, onBack }: { title: string; body: string; onBack: () => void }) {
-  return (
-    <section style={{ minHeight: '100vh', padding: '120px 40px 80px', background: '#F5F8F7' }}>
-      <div style={{ maxWidth: 720, margin: '0 auto' }}>
-        <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', color: '#0B6873', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 24, padding: 0 }}>
-          ← Back to dashboard
-        </button>
-        <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(2.2rem, 4vw, 3rem)', fontWeight: 800, color: '#102A43', marginBottom: 12 }}>{title}</h1>
-        <p style={{ fontSize: 16, color: 'rgba(22,32,42,0.6)', lineHeight: 1.65 }}>{body}</p>
-      </div>
-    </section>
-  )
-}
-
 // ─── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView] = useState<AppView>('home')
@@ -755,21 +742,9 @@ export default function App() {
 
       {view === 'scan' && <SolderPasteScan onBack={() => navigate('home')} />}
 
-      {view === 'reports' && (
-        <PlaceholderView
-          title="Reports"
-          body="Report generation will live here. For now, start from Solder Paste Scan to choose a dispense pattern."
-          onBack={() => navigate('home')}
-        />
-      )}
+      {view === 'reports' && <ReportsView onBack={() => navigate('home')} />}
 
-      {view === 'history' && (
-        <PlaceholderView
-          title="History"
-          body="Run history and case lookup will live here. Choose a pattern from Solder Paste Scan to begin a diagnosis."
-          onBack={() => navigate('home')}
-        />
-      )}
+      {view === 'history' && <HistoryView onBack={() => navigate('home')} />}
     </div>
   )
 }

@@ -40,6 +40,7 @@ export type ActionStep = {
 }
 
 export type AnalyzeResponse = {
+  session_id?: string
   filename?: string
   defect_label: string
   defect_class?: string
@@ -59,6 +60,7 @@ export type AnalyzeResponse = {
 }
 
 export type DiagnoseResponse = {
+  session_id?: string
   defect_class: string
   defect_label: string
   confidence: number
@@ -74,6 +76,33 @@ export type QaResponse = {
   model: string | null
   gemini_configured: boolean
   error?: string
+}
+
+export type HistoryCaseSummary = {
+  session_id: string
+  filename?: string | null
+  defect_class?: string | null
+  defect_label?: string | null
+  confidence?: number | null
+  detection_count?: number | null
+  quality_score?: number | null
+  top_cause?: string | null
+  top_cause_pct?: number | null
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export type HistoryCaseDetail = HistoryCaseSummary & {
+  shape_consistency?: number | null
+  size_consistency?: number | null
+  dispensing_position?: number | null
+  defect_risk?: number | null
+  answers?: Record<string, string>
+  causes?: CauseRow[]
+  action_plan?: ActionStep[]
+  detections?: Detection[]
+  annotated_image_base64?: string | null
 }
 
 async function readError(res: Response) {
@@ -106,6 +135,7 @@ export async function diagnoseWorkflow(
       detection_count: analysis.detections?.length ?? 0,
       answers,
       analysis,
+      session_id: analysis.session_id,
     }),
   })
   if (!res.ok) throw new Error(await readError(res))
@@ -130,4 +160,84 @@ export async function fetchMeta() {
   const res = await fetch(`${API_BASE}/meta`)
   if (!res.ok) throw new Error(await readError(res))
   return res.json()
+}
+
+export async function fetchHistory(limit = 50): Promise<{
+  cases: HistoryCaseSummary[]
+  count: number
+  total: number
+}> {
+  const res = await fetch(`${API_BASE}/history?limit=${limit}`)
+  if (!res.ok) throw new Error(await readError(res))
+  return res.json()
+}
+
+export async function fetchCase(sessionId: string): Promise<HistoryCaseDetail> {
+  const res = await fetch(`${API_BASE}/cases/${sessionId}`)
+  if (!res.ok) throw new Error(await readError(res))
+  return res.json()
+}
+
+export async function downloadReport(
+  sessionId: string,
+  format: "pdf" | "docx" = "pdf",
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/report/${sessionId}?format=${format}`)
+  if (!res.ok) throw new Error(await readError(res))
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `dara-report-${sessionId.slice(0, 12)}.${format}`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+export type ReportChartSlice = { label: string; value: number }
+export type ReportCause = { name: string; score: number; explanation: string }
+export type ReportDetection = {
+  id: number | string
+  defect_class: string
+  confidence_pct: number
+  area_px?: number | null
+}
+
+export type ReportPayload = {
+  session_id: string
+  generated_at: string
+  title: string
+  subtitle: string
+  brand: string
+  footer: string
+  problem_description: string
+  defect: string
+  defect_confidence_pct: number
+  severity: string
+  yield_pct: number
+  detection_count: number
+  overall_quality_score: number
+  causes: ReportCause[]
+  defect_distribution: ReportChartSlice[]
+  analysis_statistics: ReportChartSlice[]
+  detections: ReportDetection[]
+  executive_summary: string
+  process_insight: string
+  diagnostic_findings: string[]
+  maintenance_items: string[]
+  action_plan: string[]
+  engineer_notes?: string | null
+  similar_case_note?: string | null
+  methodology_note: string
+}
+
+export async function fetchReportData(sessionId: string): Promise<ReportPayload> {
+  const res = await fetch(`${API_BASE}/report/${sessionId}/data`)
+  if (!res.ok) throw new Error(await readError(res))
+  return res.json()
+}
+
+export function reportPreviewUrl(sessionId: string) {
+  return `${API_BASE}/report/${sessionId}/preview`
 }

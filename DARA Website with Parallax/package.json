@@ -11,6 +11,7 @@
     "backend": "uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000"
   },
   "dependencies": {
+    "chart.js": "^4.5.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.18.3"

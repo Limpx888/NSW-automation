@@ -210,6 +210,52 @@ def get_case(session_id: str, db_path: Path | None = None) -> dict[str, Any] | N
     return _row_to_detail(row)
 
 
+def count_cases(db_path: Path | None = None) -> int:
+    conn = connect(db_path)
+    row = conn.execute("SELECT COUNT(*) AS n FROM scan_cases").fetchone()
+    conn.close()
+    return int(row["n"] if row else 0)
+
+
+def count_similar_cases(
+    defect_class: str,
+    exclude_session_id: str | None = None,
+    db_path: Path | None = None,
+) -> tuple[int, str | None, int]:
+    """
+    Return (similar_count, most_common_top_cause_name, that_cause_count)
+    for prior cases with the same defect_class.
+    """
+    conn = connect(db_path)
+    rows = conn.execute(
+        """
+        SELECT session_id, causes_json
+        FROM scan_cases
+        WHERE defect_class = ?
+        ORDER BY created_at DESC
+        """,
+        (defect_class,),
+    ).fetchall()
+    conn.close()
+
+    cause_counts: dict[str, int] = {}
+    total = 0
+    for row in rows:
+        if exclude_session_id and row["session_id"] == exclude_session_id:
+            continue
+        total += 1
+        causes = _loads(row["causes_json"]) or []
+        if isinstance(causes, list) and causes and isinstance(causes[0], dict):
+            name = causes[0].get("name")
+            if name:
+                cause_counts[name] = cause_counts.get(name, 0) + 1
+
+    if not cause_counts:
+        return total, None, 0
+    top_name = max(cause_counts, key=cause_counts.get)
+    return total, top_name, cause_counts[top_name]
+
+
 def _loads(raw: str | None) -> Any:
     if not raw:
         return None

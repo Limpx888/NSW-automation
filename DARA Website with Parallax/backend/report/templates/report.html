@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 1.6cm 1.5cm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    color: #1B2126;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    margin: 0;
+  }
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 2px solid #1B3A5F;
+    padding-bottom: 10px;
+    margin-bottom: 16px;
+  }
+  .brand-title { font-size: 11pt; font-weight: 800; color: #1B3A5F; letter-spacing: 0.04em; margin: 0; }
+  .brand-sub { font-size: 18pt; font-weight: 800; color: #1B3A5F; margin: 2px 0 0; letter-spacing: 0.02em; }
+  .logo {
+    width: 54px; height: 54px; border-radius: 50%;
+    background: #1B3A5F; color: white; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 12pt; letter-spacing: 0.04em;
+  }
+  .meta { color: #8B96A5; font-size: 8.5pt; margin: 0 0 14px; }
+  h2 {
+    font-size: 11pt; color: #1B3A5F; text-transform: uppercase; letter-spacing: 0.06em;
+    border-bottom: 1px solid #DDE3E8; padding-bottom: 4px; margin: 18px 0 8px;
+  }
+  p { margin: 0 0 8px; }
+  .overview { color: #3A4652; font-size: 10pt; }
+  .charts {
+    display: flex; gap: 18px; align-items: flex-start; margin: 12px 0 8px;
+  }
+  .chart-block { flex: 1; text-align: center; }
+  .chart-block img { max-width: 100%; height: auto; }
+  .kpi-row { display: flex; gap: 10px; margin: 10px 0 4px; }
+  .kpi {
+    flex: 1; background: #F4F7FA; border: 1px solid #E4E9EF; border-radius: 8px;
+    padding: 8px 10px; text-align: center;
+  }
+  .kpi .label { font-size: 7.5pt; color: #8B96A5; text-transform: uppercase; letter-spacing: 0.05em; }
+  .kpi .value { font-size: 14pt; font-weight: 800; color: #1B3A5F; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #E7ECF1; font-size: 9pt; vertical-align: top; }
+  th {
+    color: #8B96A5; font-weight: 700; font-size: 8pt; text-transform: uppercase;
+    letter-spacing: 0.04em; background: #F7F9FB;
+  }
+  .box {
+    background: #F2F4F7; border: 1px solid #E1E6EC; border-radius: 8px;
+    padding: 12px 14px; margin-top: 8px;
+  }
+  .box li, .list li { margin-bottom: 5px; }
+  .footer {
+    margin-top: 22px; padding-top: 8px; border-top: 1px solid #DDE3E8;
+    display: flex; justify-content: space-between; color: #8B96A5; font-size: 8pt;
+  }
+  .note { background: #EEF6F4; border-left: 3px solid #2A9D8F; padding: 10px 12px; font-size: 9.5pt; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <section class="page">
+    <div class="header">
+      <div>
+        <p class="brand-title">{{ data.title }}</p>
+        <p class="brand-sub">{{ data.subtitle }}</p>
+      </div>
+      <div class="logo">NSW</div>
+    </div>
+    <div class="meta">Session {{ data.session_id }} · Generated {{ data.generated_at.strftime('%Y-%m-%d %H:%M UTC') }} · {{ data.brand }}</div>
+
+    <h2>Output Summary</h2>
+    <p class="overview">{{ data.methodology_note }}</p>
+    <p class="overview">{{ data.executive_summary }}</p>
+
+    <div class="kpi-row">
+      <div class="kpi"><div class="label">Severity</div><div class="value">{{ data.severity }}</div></div>
+      <div class="kpi"><div class="label">Quality / Yield</div><div class="value">{{ data.overall_quality_score }}%</div></div>
+      <div class="kpi"><div class="label">Defect Regions</div><div class="value">{{ data.detection_count }}</div></div>
+      <div class="kpi"><div class="label">Vision Conf.</div><div class="value">{{ '%.0f'|format(data.defect_confidence_pct) }}%</div></div>
+    </div>
+
+    <div class="charts">
+      <div class="chart-block">
+        <img src="data:image/png;base64,{{ defect_donut_b64 }}">
+      </div>
+      <div class="chart-block">
+        <img src="data:image/png;base64,{{ analysis_bars_b64 }}">
+      </div>
+    </div>
+
+    <h2>Cause Analysis</h2>
+    <p class="overview">{{ data.process_insight }}</p>
+    <table>
+      <tr><th>Defect / Cause</th><th>Probability</th><th>Reasoning</th></tr>
+      {% for c in data.causes|sort(attribute='score', reverse=True) %}
+      <tr>
+        <td><strong>{{ c.name }}</strong></td>
+        <td>{{ c.score }}%</td>
+        <td>{{ c.explanation }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <div class="footer">
+      <span>{{ data.footer }}</span>
+      <span>1</span>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="header">
+      <div>
+        <p class="brand-title">{{ data.title }}</p>
+        <p class="brand-sub">MAINTENANCE INSIGHTS</p>
+      </div>
+      <div class="logo">NSW</div>
+    </div>
+
+    <h2>Maintenance Items</h2>
+    <div class="box">
+      <ul>
+        {% for item in data.maintenance_items %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <h2>Diagnostic Findings</h2>
+    <ul class="list">
+      {% for item in data.diagnostic_findings %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+
+    {% if data.similar_case_note %}
+    <div class="note">{{ data.similar_case_note }}</div>
+    {% endif %}
+
+    <h2>Recommended Troubleshooting Sequence</h2>
+    <ol class="list">
+      {% for step in data.action_plan %}
+      <li>{{ step }}</li>
+      {% endfor %}
+    </ol>
+
+    <h2>Geometric Feature Extraction</h2>
+    <table>
+      <tr><th>ID</th><th>Defect Class</th><th>Confidence</th><th>Surface Area (px²)</th></tr>
+      {% if data.detections %}
+        {% for d in data.detections %}
+        <tr>
+          <td>{{ d.id }}</td>
+          <td>{{ d.defect_class }}</td>
+          <td>{{ '%.1f'|format(d.confidence_pct) }}%</td>
+          <td>{% if d.area_px is not none %}{{ '%.0f'|format(d.area_px) }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td>-</td><td>None</td><td>100%</td><td>0</td></tr>
+      {% endif %}
+    </table>
+
+    <h2>Engineer Notes</h2>
+    <p>{{ data.engineer_notes or '—' }}</p>
+
+    <div class="footer">
+      <span>{{ data.footer }}</span>
+      <span>2</span>
+    </div>
+  </section>
+</body>
+</html>

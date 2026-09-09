@@ -9,6 +9,7 @@ import {
   type CauseRow,
   type FollowUpQuestion,
 } from "@/lib/api"
+import { ReportDownloadBar } from "@/CaseWorkspace"
 
 function StarRating({ value }: { value: number }) {
   const stars = [1, 2, 3, 4, 5]
@@ -149,7 +150,16 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
       const data = await diagnoseWorkflow(result, answers)
       setCauses(data.causes)
       setActionPlan(data.action_plan)
-      setResult((prev) => (prev ? { ...prev, causes: data.causes, action_plan: data.action_plan } : prev))
+      setResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              session_id: data.session_id || prev.session_id,
+              causes: data.causes,
+              action_plan: data.action_plan,
+            }
+          : prev,
+      )
       const top = data.causes[0]
       setChat((prev) => [
         ...prev,
@@ -499,6 +509,10 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
               </div>
             </div>
           </div>
+        )}
+
+        {result?.session_id && causes.length > 0 && (
+          <ReportDownloadBar sessionId={result.session_id} />
         )}
 
         {/* Fast chat */}

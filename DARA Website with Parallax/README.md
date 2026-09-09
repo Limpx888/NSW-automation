@@ -30,10 +30,15 @@ npm run backend
 ### Terminal 2: Frontend
 
 ```powershell
-cd frontend
 npm run dev
 ```
 
 Open the frontend at <http://localhost:8443>.
 
 The backend runs at <http://127.0.0.1:8000>.
+
+## History and reports
+
+- Every analyze/diagnose run is saved to History (`data/scan_cases.db`).
+- Reports include cause charts, quality donut, and deep analysis.
+- Download as **PDF** or **Word (.docx)** from Scan results, History, or Reports.
