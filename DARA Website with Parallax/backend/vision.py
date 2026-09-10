@@ -59,14 +59,11 @@ def encode_image_b64(bgr: np.ndarray, ext: str = ".jpg") -> str:
     return base64.b64encode(buf.tobytes()).decode("ascii")
 
 
-@lru_cache(maxsize=1)
 def load_model():
     """Load Ultralytics YOLO checkpoint once."""
     global _MODEL, _MODEL_ERROR
     if _MODEL is not None:
         return _MODEL
-    if _MODEL_ERROR:
-        return None
 
     settings = get_settings()
     path = settings.model_path
@@ -78,6 +75,7 @@ def load_model():
         from ultralytics import YOLO
 
         _MODEL = YOLO(str(path))
+        _MODEL_ERROR = None
         return _MODEL
     except Exception as exc:  # noqa: BLE001 — surface load failures to /meta
         _MODEL_ERROR = str(exc)

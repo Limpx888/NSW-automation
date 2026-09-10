@@ -26,10 +26,20 @@ class Settings(BaseSettings):
 
     @property
     def model_path(self) -> Path:
-        path = Path(self.yolo_model_path)
-        if not path.is_absolute():
-            path = ROOT / path
-        return path
+        raw = Path(self.yolo_model_path)
+        candidates = [
+            raw if raw.is_absolute() else ROOT / raw,
+            raw if raw.is_absolute() else BACKEND_DIR / raw,
+            BACKEND_DIR / "weights" / "best.pt",
+            ROOT / "backend" / "weights" / "best.pt",
+            ROOT / "best.pt",
+            ROOT / "best (2).pt",
+            ROOT / "best (1).pt",
+        ]
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file():
+                return candidate.resolve()
+        return raw if raw.is_absolute() else ROOT / raw
 
     @property
     def cors_origin_list(self) -> list[str]:
