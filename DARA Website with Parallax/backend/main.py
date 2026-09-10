@@ -8,7 +8,9 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
-
+import pandas as pd
+import joblib
+from fastapi import Form
 from backend import history
 from backend.config import get_settings
 from backend.qa import answer_question
@@ -84,6 +86,71 @@ def _defect_from_analysis(analysis: dict[str, Any] | None) -> tuple[str, float, 
 def startup() -> None:
     history.connect().close()
     load_model()
+    try:
+        global ml_pipeline
+        ml_pipeline = joblib.load("backend/weights/aoi_diagnostic_model.pkl")
+    except Exception as e:
+        print(f"Error loading ML model: {e}")
+        ml_pipeline = None
+
+ACTION_DB = {
+    "Air Bubble": "Inspect syringe barrel for micro-bubbles and perform line purge.",
+    "Nozzle Blockage": "Inspect nozzle tip under microscope; clean or replace tip.",
+    "Material Viscosity Change": "Verify syringe temperature and check material pot-life.",
+    "Incorrect Parameter": "Verify pressure regulator, pulse timer, and standoff height.",
+    "Equipment Problem": "Perform Z-height sensor zeroing and substrate flatness check."
+}
+
+@app.post("/api/diagnose")
+async def run_ml_diagnostics(
+    yolo_defect: str = Form(...),
+    material: str = Form(...),
+    amount: str = Form(...),
+    frequency: str = Form(...),
+    recent_change: str = Form(...),
+    location: str = Form(...)
+):
+    if ml_pipeline is None:
+        raise HTTPException(500, "ML model not loaded.")
+        
+    input_df = pd.DataFrame([{
+        "yolo_defect": yolo_defect,
+        "material": material,
+        "amount": amount,
+        "frequency": frequency,
+        "recent_change": recent_change,
+        "location": location
+    }])
+
+    probabilities = ml_pipeline.predict_proba(input_df)[0]
+    classes = ml_pipeline.named_steps["classifier"].classes_
+
+    cause_scores = []
+    for cause_name, prob in zip(classes, probabilities):
+        score_pct = int(round(prob * 100))
+        cause_scores.append({
+            "cause": cause_name,
+            "score": f"{score_pct}%",
+            "score_num": score_pct,
+            "reasoning": f"ML model calculated {score_pct}% confidence based on operational inputs."
+        })
+
+    sorted_causes = sorted(cause_scores, key=lambda x: x["score_num"], reverse=True)[:3]
+
+    action_plan = []
+    statuses = ["In progress", "Pending", "Pending"]
+    for idx, (cause_item, status) in enumerate(zip(sorted_causes, statuses), start=1):
+        action_plan.append({
+            "step": idx,
+            "cause": cause_item["cause"],
+            "action": ACTION_DB.get(cause_item["cause"], "Perform general visual inspection."),
+            "status": status
+        })
+
+    return {
+        "cause_table": sorted_causes,
+        "action_plan": action_plan
+    }
 
 
 @app.get("/health")

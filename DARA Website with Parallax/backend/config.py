@@ -17,7 +17,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    yolo_model_path: str = "best (2).pt"
+    yolo_model_path: str = "backend/weights/best.pt"
     yolo_conf: float = 0.25
     yolo_iou: float = 0.45
     gemini_api_key: str = ""
