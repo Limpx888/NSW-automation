@@ -18,10 +18,14 @@ class Evidence:
     strength: float = 1.0
     explanation: str = ""
     timestamp: str | None = None
+    correlation_group: str | None = None
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "reliability", max(0.0, min(1.0, float(self.reliability))))
         object.__setattr__(self, "strength", max(0.0, float(self.strength)))
+        object.__setattr__(self, "correlation_group", self.correlation_group or self.feature_name)
+        object.__setattr__(self, "provenance", dict(self.provenance or {}))
         object.__setattr__(
             self,
             "supporting_causes",
@@ -51,4 +55,6 @@ class Evidence:
             "strength": self.strength,
             "explanation": self.explanation,
             "timestamp": self.timestamp,
+            "correlation_group": self.correlation_group,
+            "provenance": dict(self.provenance),
         }

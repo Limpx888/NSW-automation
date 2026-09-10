@@ -18,6 +18,7 @@ from backend.quality import assess_quality
 from backend.report.data import build_report_data
 from backend.report.docx_renderer import render_docx
 from backend.report.pdf_renderer import render_pdf, render_report_html
+from backend.reasoning import MultimodalEvidenceFusion, QuestionOption
 from backend.vision import analyze_image, decode_image, load_model, model_status
 from backend.workflow import PostInspectionWorkflow
 
@@ -61,6 +62,16 @@ class DiagnoseRequest(BaseModel):
     answers: dict[str, str] = Field(default_factory=dict)
     analysis: dict[str, Any] | None = None
     session_id: str | None = None
+
+
+class FusionDiagnoseRequest(BaseModel):
+    questionnaire: list[dict[str, Any]] = Field(default_factory=list)
+    vision: list[dict[str, Any]] = Field(default_factory=list)
+    process_parameters: list[dict[str, Any]] = Field(default_factory=list)
+    historical_cases: list[dict[str, Any]] = Field(default_factory=list)
+    cause_ids: list[str] | None = None
+    questions: list[dict[str, Any]] = Field(default_factory=list)
+    inputs: dict[str, Any] = Field(default_factory=dict)
 
 
 def _defect_from_analysis(analysis: dict[str, Any] | None) -> tuple[str, float, int]:
@@ -172,6 +183,7 @@ def meta() -> dict[str, Any]:
             "analyze": "POST /analyze",
             "questions": "POST /workflow/questions",
             "diagnose": "POST /workflow/diagnose",
+            "reasoning_diagnose": "POST /reasoning/diagnose",
             "qa": "POST /qa (fast rule-based; optional use_gemini=true)",
             "history": "GET /history",
             "case": "GET /cases/{session_id}",
@@ -294,6 +306,25 @@ def workflow_diagnose(payload: DiagnoseRequest) -> dict[str, Any]:
     )
     out["session_id"] = session_id
     return out
+
+
+@app.post("/reasoning/diagnose")
+def multimodal_reasoning_diagnose(payload: FusionDiagnoseRequest) -> dict[str, Any]:
+    """Run the evidence-first multimodal pipeline and return its full diagnostic trace."""
+    try:
+        questions = [QuestionOption(**question) for question in payload.questions]
+        result = MultimodalEvidenceFusion().diagnose(
+            questionnaire=payload.questionnaire,
+            vision=payload.vision,
+            process_parameters=payload.process_parameters,
+            historical_cases=payload.historical_cases,
+            cause_ids=payload.cause_ids,
+            questions=questions,
+            inputs=payload.inputs,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(422, f"Invalid reasoning input: {exc}") from exc
+    return result.as_dict()
 
 
 @app.post("/qa")

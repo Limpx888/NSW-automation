@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from backend.reasoning import (
     Evidence,
+    MultimodalEvidenceFusion,
     build_explanation_for_cause,
     compute_cause_scores,
+    evaluate_uncertainty,
     explain_diagnosis,
     get_cause_definitions,
+    QuestionOption,
+    QuestionSelector,
+    build_sample_diagnostic_trace,
 )
 from backend.reasoning.knowledge_base import ROOT_CAUSE_KB
 
@@ -194,3 +199,269 @@ def test_build_explanation_for_cause_returns_traceable_contributions() -> None:
     assert explanation.likelihood > 0.0
     assert explanation.contribution_summary[0]["feature_name"] == "pressure_adjusted"
     assert explanation.explanation
+
+
+def test_high_confidence_diagnosis_is_not_uncertain() -> None:
+    evidence = [
+        Evidence(
+            id="e1",
+            feature_name="intermittent_volume_variation",
+            value="intermittent",
+            source="questionnaire",
+            reliability=0.9,
+            supporting_causes={"air_bubble": 1.0},
+            contradicting_causes={"nozzle_blockage": 0.2},
+            strength=30.0,
+            explanation="Intermittent variation supports trapped air.",
+        ),
+        Evidence(
+            id="e2",
+            feature_name="visible_bubble",
+            value=True,
+            source="image_model",
+            reliability=0.85,
+            supporting_causes={"air_bubble": 0.9},
+            contradicting_causes={"equipment_problem": 0.1},
+            strength=22.0,
+            explanation="Visible bubble strengthens the air-bubble case.",
+        ),
+    ]
+
+    scores = compute_cause_scores(evidence, cause_ids=["air_bubble", "nozzle_blockage", "equipment_problem"])
+    uncertainty = evaluate_uncertainty(scores, next_best_question="Confirm the material was recently changed?")
+
+    assert uncertainty.is_uncertain is False
+    assert uncertainty.top_cause == "Air Bubble"
+    assert uncertainty.next_best_question is None
+
+
+def test_close_competing_causes_are_marked_uncertain() -> None:
+    evidence = [
+        Evidence(
+            id="e1",
+            feature_name="under_dispense",
+            value="yes",
+            source="questionnaire",
+            reliability=0.9,
+            supporting_causes={"nozzle_blockage": 1.0, "incorrect_parameter": 0.9},
+            contradicting_causes={},
+            strength=20.0,
+            explanation="Under-dispense supports both blockage and settings drift.",
+        ),
+    ]
+
+    scores = compute_cause_scores(evidence, cause_ids=["nozzle_blockage", "incorrect_parameter"])
+    uncertainty = evaluate_uncertainty(scores, config={"min_top1_likelihood": 0.5, "min_top2_margin": 0.25, "max_entropy": 1.0})
+
+    assert uncertainty.is_uncertain is True
+    assert uncertainty.top_cause in {"Nozzle Blockage", "Incorrect Parameter"}
+    assert uncertainty.next_best_question
+
+
+def test_completely_ambiguous_evidence_is_uncertain() -> None:
+    evidence = [
+        Evidence(
+            id="e1",
+            feature_name="defect_observed",
+            value="generic",
+            source="questionnaire",
+            reliability=0.5,
+            supporting_causes={"air_bubble": 0.5, "incorrect_parameter": 0.5, "material_viscosity_change": 0.5},
+            contradicting_causes={},
+            strength=5.0,
+            explanation="Generic defect signal is not discriminative.",
+        )
+    ]
+
+    scores = compute_cause_scores(evidence, cause_ids=["air_bubble", "incorrect_parameter", "material_viscosity_change"])
+    uncertainty = evaluate_uncertainty(scores)
+
+    assert uncertainty.is_uncertain is True
+    assert uncertainty.entropy > 0.0
+    assert "Insufficient evidence" in uncertainty.explanation
+
+
+def test_no_evidence_returns_uncertain_state() -> None:
+    uncertainty = evaluate_uncertainty([])
+
+    assert uncertainty.is_uncertain is True
+    assert uncertainty.top_cause is None
+    assert uncertainty.next_best_question
+    assert "No evidence" in uncertainty.explanation
+
+
+def test_multimodal_fusion_preserves_provenance_and_does_not_double_count_correlated_evidence() -> None:
+    engine = MultimodalEvidenceFusion()
+    result = engine.diagnose(
+        questionnaire=[
+            Evidence(
+                id="q-pattern",
+                feature_name="intermittent_volume_variation",
+                value="intermittent",
+                source="questionnaire",
+                reliability=0.9,
+                supporting_causes={"air_bubble": 1.0},
+                strength=30.0,
+                correlation_group="flow_pattern",
+            )
+        ],
+        vision=[
+            Evidence(
+                id="v-pattern",
+                feature_name="irregular_dot_shape",
+                value=True,
+                source="vision",
+                reliability=0.8,
+                supporting_causes={"air_bubble": 1.0},
+                strength=20.0,
+                correlation_group="flow_pattern",
+            )
+        ],
+        cause_ids=["air_bubble", "nozzle_blockage"],
+    )
+
+    assert {item["source"] for item in result.trace.evidence} == {"questionnaire", "vision"}
+    assert result.trace.evidence[0]["correlation_group"] == "flow_pattern"
+    assert len(result.trace.raw_scores) == 2
+    assert any(item.get("suppressed") for item in result.trace.contributions)
+    assert result.score_results[0].raw_score == 27.0
+
+
+def test_multimodal_fusion_explicitly_records_conflicting_sources() -> None:
+    engine = MultimodalEvidenceFusion()
+    result = engine.diagnose(
+        questionnaire=[
+            Evidence(
+                id="q-bubble",
+                feature_name="visible_bubble",
+                value=True,
+                source="questionnaire",
+                supporting_causes={"air_bubble": 1.0},
+                strength=10.0,
+                correlation_group="bubble_observation",
+            )
+        ],
+        vision=[
+            Evidence(
+                id="v-no-bubble",
+                feature_name="no_visible_bubble",
+                value=True,
+                source="vision",
+                contradicting_causes={"air_bubble": 1.0},
+                strength=9.0,
+                correlation_group="bubble_observation",
+            )
+        ],
+        cause_ids=["air_bubble", "nozzle_blockage"],
+    )
+
+    assert result.trace.conflicts[0]["cause_id"] == "air_bubble"
+    assert result.trace.conflicts[0]["supporting_evidence_ids"] == ["q-bubble"]
+    assert result.trace.conflicts[0]["contradicting_evidence_ids"] == ["v-no-bubble"]
+
+
+def test_high_uncertainty_stops_before_diagnosis_and_requests_next_question() -> None:
+    engine = MultimodalEvidenceFusion()
+    result = engine.diagnose(
+        questionnaire=[
+            Evidence(
+                id="q-generic",
+                feature_name="generic_defect_signal",
+                value=True,
+                source="questionnaire",
+                supporting_causes={"air_bubble": 1.0, "nozzle_blockage": 1.0},
+                strength=5.0,
+            )
+        ],
+        cause_ids=["air_bubble", "nozzle_blockage"],
+        questions=[QuestionOption(id="q-frequency", text="Is the defect intermittent or continuous?", feature="frequency")],
+    )
+
+    assert result.uncertainty_result.is_uncertain is True
+    assert result.trace.final_diagnosis is None
+    assert result.trace.explanation is None
+    assert result.trace.uncertainty["next_best_question"] == "Is the defect intermittent or continuous?"
+    assert result.trace.recommended_action == []
+
+
+def test_sample_diagnostic_trace_contains_all_pipeline_stages() -> None:
+    trace = build_sample_diagnostic_trace()
+
+    for key in (
+        "inputs",
+        "evidence",
+        "contributions",
+        "raw_scores",
+        "normalized_likelihoods",
+        "uncertainty",
+        "final_diagnosis",
+        "explanation",
+        "recommended_action",
+    ):
+        assert key in trace
+    assert trace["evidence"]
+    assert trace["raw_scores"]
+    assert trace["normalized_likelihoods"]
+
+
+def test_question_selector_uses_expected_information_gain_when_distributions_exist() -> None:
+    scores = [
+        {
+            "cause_id": "air_bubble",
+            "name": "Air Bubble",
+            "normalized_likelihood": 0.55,
+            "raw_score": 40.0,
+        },
+        {
+            "cause_id": "nozzle_blockage",
+            "name": "Nozzle Blockage",
+            "normalized_likelihood": 0.45,
+            "raw_score": 35.0,
+        },
+    ]
+
+    question_a = QuestionOption(
+        id="q1",
+        text="Was the defect intermittent or continuous?",
+        feature="intermittent_volume_variation",
+        answer_distributions={
+            "intermittent": {"air_bubble": 0.85, "nozzle_blockage": 0.15},
+            "continuous": {"air_bubble": 0.2, "nozzle_blockage": 0.8},
+        },
+    )
+    question_b = QuestionOption(
+        id="q2",
+        text="Was there a recent material change?",
+        feature="recent_material_change",
+        answer_distributions={
+            "yes": {"air_bubble": 0.5, "nozzle_blockage": 0.5},
+            "no": {"air_bubble": 0.5, "nozzle_blockage": 0.5},
+        },
+    )
+
+    selector = QuestionSelector()
+    selected = selector.select_question(scores, [question_a, question_b])
+
+    assert selected is not None
+    assert selected.id == "q1"
+
+
+def test_question_selector_falls_back_to_weighted_information_heuristic_without_distributions() -> None:
+    scores = [
+        {"cause_id": "air_bubble", "name": "Air Bubble", "normalized_likelihood": 0.38, "raw_score": 25.0},
+        {"cause_id": "nozzle_blockage", "name": "Nozzle Blockage", "normalized_likelihood": 0.31, "raw_score": 22.0},
+        {"cause_id": "incorrect_parameter", "name": "Incorrect Parameter", "normalized_likelihood": 0.31, "raw_score": 21.0},
+    ]
+
+    selector = QuestionSelector()
+    selected = selector.select_question(
+        scores,
+        [
+            QuestionOption(id="q1", text="Was the defect intermittent?", feature="intermittent_volume_variation"),
+            QuestionOption(id="q2", text="Was a nozzle recently replaced?", feature="nozzle_blockage"),
+        ],
+    )
+
+    assert selected is not None
+    assert selected.id in {"q1", "q2"}
+    assert selected.text

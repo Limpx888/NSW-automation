@@ -42,3 +42,16 @@ The backend runs at <http://127.0.0.1:8000>.
 - Every analyze/diagnose run is saved to History (`data/scan_cases.db`).
 - Reports include cause charts, quality donut, and deep analysis.
 - Download as **PDF** or **Word (.docx)** from Scan results, History, or Reports.
+
+## Evidence-first multimodal reasoning
+
+`POST /reasoning/diagnose` accepts questionnaire, vision, process-parameter, and
+optional historical evidence. Each item should include an `id`, `feature_name`,
+`value`, source-specific reliability, and explicit supporting or contradicting
+cause weights. Historical evidence is never inferred when omitted.
+
+The response contains a complete diagnostic trace: extracted evidence,
+correlation suppression, conflicts, contributions, raw scores, normalized
+likelihoods, uncertainty, next-best question, diagnosis when justified,
+explanation, and recommended actions. Normalized likelihoods are ranking scores,
+not calibrated probabilities.
