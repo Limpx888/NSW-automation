@@ -42,6 +42,7 @@ const getNextDynamicQuestion = (answers: Record<string, string>): DynamicQuestio
         "Too Large (Excess volume, slumping, or spreading)",
         "Too Small (Insufficient volume or starved dot/line)",
         "Completely Missing (Zero deposit / skipped shot)",
+        "Inconsistent Shape (Stringing, tailing, or irregular)"
       ],
     }
   }
@@ -56,6 +57,7 @@ const getNextDynamicQuestion = (answers: Record<string, string>): DynamicQuestio
         options: [
           "Continuously from the start",
           "Only after running for some time (Progressive / Viscosity drop)",
+          "After Idle (First few dots after a break)",
         ],
       }
     }
@@ -67,11 +69,20 @@ const getNextDynamicQuestion = (answers: Record<string, string>): DynamicQuestio
         options: ["Multiple Locations / Everywhere", "Single Specific Location / Pad"],
       }
     }
-  } else if (!answers["frequency"]) {
+  }
+
+  // BREAK THE ELSE-IF CHAIN HERE:
+  // Ask the standard frequency question for everyone except the "Too Small" branch
+  if (!amountAns.includes("Too Small") && !answers["frequency"]) {
     return {
       key: "frequency",
       title: "Is the defect happening continuously or occasionally?",
-      options: ["Continuously", "Occasionally / Intermittently"],
+      options: [
+        "Continuously",
+        "Occasionally / Intermittently",
+        "After Idle (First few dots after a break)",
+        "Progressive (Gets worse over time)" // Added progressive option here too
+      ],
     }
   }
 
@@ -308,11 +319,16 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
         else defectClass = "inconsistent_size"
       }
 
+      let freqVal = answers["frequency"] || answers["frequency_small_branch"] || ""
+      if (freqVal.includes("After Idle")) {
+        freqVal = "after_idle"
+      }
+
       const formData = new FormData()
       formData.append("yolo_defect", defectClass)
       formData.append("material", answers["material"] || "")
       formData.append("amount", answers["amount"] || "")
-      formData.append("frequency", answers["frequency"] || answers["frequency_small_branch"] || "")
+      formData.append("frequency", freqVal) // <-- Using the formatted value
       formData.append("recent_change", answers["recent_change"] || "")
       formData.append("location", answers["location_large_branch"] || "")
 
@@ -486,6 +502,9 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
         } else if (amt === "missing") {
           updatedAnswers.amount = "Completely Missing (Zero deposit / skipped shot)"
           extractedList.push("Amount: Completely Missing")
+        } else if (amt === "stringing" || amt === "irregular" || amt === "inconsistent") { // <-- Add this block
+          updatedAnswers.amount = "Inconsistent Shape (Stringing, tailing, or irregular)"
+          extractedList.push("Amount: Stringing / Inconsistent")
         }
       }
 
@@ -497,15 +516,24 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
             extractedList.push("Frequency: Continuous")
           } else if (freq === "occasional" || freq === "progressive") {
             updatedAnswers.frequency_small_branch = "Only after running for some time (Progressive / Viscosity drop)"
-            extractedList.push("Frequency: After running for some time")
+            extractedList.push("Frequency: Progressive")
+          } else if (freq === "after_idle") {
+            updatedAnswers.frequency_small_branch = "After Idle (First few dots after a break)"
+            extractedList.push("Frequency: After Idle")
           }
-        } else if (!updatedAnswers.amount?.includes("Too Large")) {
+        } else { // <-- CHANGED: Now catches ALL other amounts (Too Large, Missing, etc.)
           if (freq === "continuous") {
             updatedAnswers.frequency = "Continuously"
             extractedList.push("Frequency: Continuous")
           } else if (freq === "occasional") {
             updatedAnswers.frequency = "Occasionally / Intermittently"
             extractedList.push("Frequency: Occasional")
+          } else if (freq === "after_idle") {
+            updatedAnswers.frequency = "After Idle (First few dots after a break)"
+            extractedList.push("Frequency: After Idle")
+          } else if (freq === "progressive") { // <-- ADDED: Catch progressive frequency
+            updatedAnswers.frequency = "Progressive (Gets worse over time)"
+            extractedList.push("Frequency: Progressive")
           }
         }
       }
@@ -884,7 +912,6 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
                 <ul style={{ margin: 0, paddingLeft: 24, display: "flex", flexDirection: "column", gap: 10, fontSize: 15, color: "#000", lineHeight: 1.5 }}>
                   {causes.map((row) => (
                     <li key={row.cause_id}>
-                      {/* Update the strong tag to include the percentage */}
                       <strong>{row.name} ({row.likelihood_pct}%):</strong> {row.reasoning}
                     </li>
                   ))}

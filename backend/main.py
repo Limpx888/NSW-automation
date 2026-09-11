@@ -137,13 +137,103 @@ async def run_diagnostics(
     }
     result = wf.run(answers)
 
+    # Inject Thixotropic override for idle machines
+    # UPDATE THIS LINE to catch both the strict keyword and the raw UI label:
+    if frequency == "after_idle" or "After Idle" in frequency: 
+        from backend.workflow import CauseRow, ActionStep
+        
+        thixotropic_cause = CauseRow(
+            cause_id="thixotropic_thickening",
+            name="Thixotropic Paste Thickening",
+            likelihood_pct=92.0,
+            reasoning="Paste viscosity increased while resting during the break."
+        )
+        result.causes.insert(0, thixotropic_cause)
+        
+        dummy_action = ActionStep(
+            step=1,
+            title="Execute Dummy Shots", 
+            related_cause="Thixotropic Paste Thickening",
+            detail="Run 5-10 dummy shots to apply shear stress and condition paste viscosity before resuming production.",
+            status="pending"
+        )
+        
+        # 1. Insert the dummy action at the very top of the list
+        result.action_plan.insert(0, dummy_action)
+        
+        # 2. Re-number all steps sequentially so they render as 1, 2, 3, 4...
+        for idx, action in enumerate(result.action_plan):
+            action.step = idx + 1
+
+    # Inject override for Stringing / Tailing (Case-insensitive)
+    amount_lower = str(amount).lower()
+    if "stringing" in amount_lower or "tailing" in amount_lower or "inconsistent" in amount_lower:
+        from backend.workflow import CauseRow, ActionStep
+        
+        # Override the defect label for the UI
+        result.defect_label = "STRINGING / TAILING"
+        
+        # Remove any generic stringing causes the ML might have guessed to avoid duplicates
+        result.causes = [c for c in result.causes if "stringing" not in c.name.lower() and "tailing" not in c.name.lower()]
+        
+        stringing_cause = CauseRow(
+            cause_id="incorrect_parameter",
+            name="Incorrect Retract / Vacuum Parameter",
+            likelihood_pct=88.0,
+            reasoning="Tailing and dog-ears occur when the nozzle pulls away before the material snaps cleanly. This indicates insufficient suck-back (vacuum) or improper Z-axis retract speed."
+        )
+        result.causes.insert(0, stringing_cause)
+        
+        stringing_action = ActionStep(
+            step=1,
+            title="Adjust Z-Retract and Vacuum", 
+            related_cause="Incorrect Retract / Vacuum Parameter",
+            detail="Increase the vacuum (suck-back) slightly, or adjust the Z-axis retract speed and height to ensure a clean break off the dot before XY movement.",
+            status="pending"
+        )
+        result.action_plan.insert(0, stringing_action)
+        
+        # Re-number all steps sequentially
+        for idx, action in enumerate(result.action_plan):
+            action.step = idx + 1
+
+    # Inject override for Progressive Viscosity Drop (Afternoon Slumping)
+    frequency_lower = str(frequency).lower()
+    
+    if "progressive" in frequency_lower and ("large" in amount_lower or "excess" in amount_lower):
+        from backend.workflow import CauseRow, ActionStep
+        
+        viscosity_cause = CauseRow(
+            cause_id="material_viscosity",
+            name="Material Viscosity Drop (Ambient Temperature)",
+            likelihood_pct=89.0,
+            reasoning="Paste slumping and bridging that worsens over a few hours (especially in the afternoon) is a classic symptom of ambient temperature rising, which causes solder paste to thin out."
+        )
+        result.causes.insert(0, viscosity_cause)
+        
+        viscosity_action = ActionStep(
+            step=1,
+            title="Check Ambient Temperature", 
+            related_cause="Material Viscosity Drop (Ambient Temperature)",
+            detail="Check the shop floor/machine temperature. If it is warm, replace the paste with a fresh, cooler batch and verify booth climate controls.",
+            status="pending"
+        )
+        result.action_plan.insert(0, viscosity_action)
+        
+        # Re-number all steps sequentially
+        for idx, action in enumerate(result.action_plan):
+            action.step = idx + 1
+
     top_cause = result.causes[0] if result.causes else None
     reasoning_text = ""
     
     if top_cause:
         reasoning_text = f"{top_cause.name} is ranked as the highest possible cause because "
+        # Connect idle time to thixotropic thickening
+        if top_cause.cause_id == "thixotropic_thickening":
+            reasoning_text += "solder paste is a non-Newtonian fluid that thickens when idle. The first few shots lack the shear stress needed to achieve proper flow."
         # Connect the hardware swap to the blockage
-        if top_cause.cause_id == "nozzle_blockage" and "nozzle" in answers.get("recent_change", "").lower():
+        elif top_cause.cause_id == "nozzle_blockage" and "nozzle" in answers.get("recent_change", "").lower():
             reasoning_text += "the missing dots occurred continuously immediately after the hardware setup was swapped."
         # Connect occasional frequency to air bubbles
         elif top_cause.cause_id == "air_bubble" and "occasional" in answers.get("frequency", "").lower():
@@ -162,9 +252,12 @@ async def run_diagnostics(
         "too_much": ["Paste spreading beyond pad", "Bridges between pads", "Slumping"],
         "insufficient_volume": ["Starved joints", "Incomplete pad coverage"],
         "too_little": ["Starved joints", "Incomplete pad coverage"],
+        "STRINGING / TAILING": ["Material pulls up into a string", "Dog-ears on deposit peaks", "Paste smearing between pads"],
         "inconsistent_size": ["Some dispensing dots are larger", "Some dispensing dots are smaller", "Dispensing results are not repeatable"]
     }
-    symptoms = symptoms_map.get(result.defect_class) or symptoms_map.get(yolo_defect) or symptoms_map["inconsistent_size"]
+    
+    # Update the lookup to check the overridden label first
+    symptoms = symptoms_map.get(result.defect_label) or symptoms_map.get(result.defect_class) or symptoms_map.get(yolo_defect) or symptoms_map["inconsistent_size"]
 
     return {
         "defect_class": result.defect_class,
@@ -480,23 +573,26 @@ def extract_symptoms(payload: TextDescription):
         text_lower = text.lower()
 
         amt = "unknown"
-        if re.search(r'\b(too small|insufficient|starved|thin|little|low volume|under-deposit)\b', text_lower):
+        if re.search(r'\b(too small|insufficient|starved|thin|little|low volume|under-deposit|undersized?)\b', text_lower):
             amt = "too_small"
-        elif re.search(r'\b(too large|excess|slump|spreading|overflow|too much|high volume)\b', text_lower):
+        elif re.search(r'\b(too large|excess|slump|spreading|overflow|too much|high volume|oversized?)\b', text_lower):
             amt = "too_large"
-        elif re.search(r'\b(inconsistent|fluctuat|irregular|stringing)\b', text_lower):
+        elif re.search(r'\b(inconsistent|fluctuat|irregular|stringing|tailing|dog-?ears?)\b', text_lower):
             amt = "inconsistent"
         elif re.search(r'\b(missing|skipped|no deposit|zero)\b', text_lower):
             amt = "missing"
 
         freq = "unknown"
-        # 1. Check progressive first (starts normal, gets worse over time/hours)
-        if re.search(r'\b(getting worse|after.*running|few hours|over time|progressive|starts normal)\b', text_lower):
+        # 1. Check idle/startup specifically FIRST
+        if re.search(r'\b(first few|idle|break|start-?up)\b', text_lower):
+            freq = "after_idle"
+        # 2. Check progressive (starts normal, gets worse over time/hours)
+        elif re.search(r'\b(getting worse|after.*running|few hours|over time|progressive|starts normal)\b', text_lower):
             freq = "progressive"
-        # 2. Check occasional and negation phrases
+        # 3. Check generic occasional
         elif re.search(r'\b(not every|doesn\'t happen on every|does not happen on every|occasionally|occasional|intermittent|random|sometimes|sporadic)\b', text_lower):
             freq = "occasional"
-        # 3. Check continuous
+        # 4. Check continuous
         elif re.search(r'\b(continuous|continuously|every single board|every board|all the time|always|every target|every dot)\b', text_lower):
             freq = "continuous"
 
@@ -529,7 +625,7 @@ def extract_symptoms(payload: TextDescription):
         Analyze this manufacturing defect description: "{payload.text}"
         Extract the symptoms and output ONLY a JSON object with these exact keys and allowed values:
         - amount: "too_small", "too_large", "inconsistent", "missing", "spreading", "irregular", "stringing", or "unknown"
-        - frequency: "continuous", "occasional", "progressive", or "unknown" 
+        - frequency: "continuous", "occasional", "progressive", "after_idle", or "unknown" 
         - location: "single", "multiple", or "unknown"
         - recent_change: "nozzle", "syringe", "parameters", "none", or "unknown"
 
@@ -538,6 +634,7 @@ def extract_symptoms(payload: TextDescription):
         2. If the user mentions "all locations", "across all dispensing locations", "everywhere", "entire board", "multiple locations", or "random spots", you MUST output "multiple", even if the word "single" appears elsewhere in the text.
         3. Only output "single" if the defect is explicitly confined to one specific pad, pin, or single location on the PCB.
         4. For 'recent_change', always extract any hardware replacement, cleanings, or maintenance (e.g., "micro-nozzle", "new nozzle", "tip replaced" MUST map to "nozzle"). Map new syringe barrels or material batches to "syringe", and pressure/timing/standoff changes to "parameters".
+        5. For 'frequency', if the defect occurs only on start-up, during the "first few dots", or after sitting idle/on a break, you MUST classify it as "after_idle".
         """
 
         model = genai.GenerativeModel(
@@ -548,6 +645,16 @@ def extract_symptoms(payload: TextDescription):
         # Enforce 3.5s timeout so cloud LLM never blocks or freezes UI
         response = model.generate_content(prompt, request_options={"timeout": 3.5})
         parsed = json.loads(response.text)
+        
+        # --- ADD THIS FAILSAFE ---
+        # Force 'after_idle' or 'progressive' if the LLM gets confused by complex phrasing
+        text_lower = payload.text.lower()
+        if re.search(r'\b(first few|idle|break|start-?up)\b', text_lower):
+            parsed["frequency"] = "after_idle"
+        elif re.search(r'\b(getting worse|after.*running|few hours|over time|progressive|starts normal)\b', text_lower):
+            parsed["frequency"] = "progressive"
+        # -------------------------
+
         return {
             "amount": parsed.get("amount", "unknown"),
             "frequency": parsed.get("frequency", "unknown"),
