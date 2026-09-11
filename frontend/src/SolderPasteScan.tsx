@@ -332,12 +332,26 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
       formData.append("recent_change", answers["recent_change"] || "")
       formData.append("location", answers["location_large_branch"] || "")
 
+      // ADD THIS LINE: Pass the existing session_id if it is an image upload
+      if (analysisResult?.session_id) {
+        formData.append("session_id", analysisResult.session_id)
+      }
+
       const res = await fetch('http://localhost:8000/api/diagnose', {
         method: 'POST',
         body: formData,
       })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
+
+      // Save the generated session_id into the frontend state
+      setResult((prev) => ({
+        ...(prev || {}),
+        session_id: data.session_id,
+        defect_label: data.defect_label,
+        defect_class: data.defect_class,
+        confidence: data.confidence,
+      } as AnalyzeResponse))
 
       // Pull defect_label and confidence from API response (Step 2 requirement)
       if (data.defect_label) {

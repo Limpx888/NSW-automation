@@ -120,7 +120,8 @@ async def run_diagnostics(
     amount: str = Form(""),
     frequency: str = Form(""),
     recent_change: str = Form(""),
-    location: str = Form("")
+    location: str = Form(""),
+    session_id: str = Form(None)
 ):
     # 1. Calculate Dynamic Confidence based on known answers
     known_count = sum(1 for v in [material, amount, frequency, recent_change, location] if v and "unknown" not in v.lower())
@@ -259,29 +260,80 @@ async def run_diagnostics(
     # Update the lookup to check the overridden label first
     symptoms = symptoms_map.get(result.defect_label) or symptoms_map.get(result.defect_class) or symptoms_map.get(yolo_defect) or symptoms_map["inconsistent_size"]
 
-    return {
+    # 1. Format the causes and action plan for the database
+    formatted_causes = [
+        {
+            "cause_id": c.cause_id,
+            "name": c.name,
+            "likelihood_pct": c.likelihood_pct,
+            "reasoning": c.reasoning 
+        } for c in result.causes
+    ]
+    
+    formatted_actions = [
+        {
+            "step": a.step,
+            "cause": a.related_cause,
+            "action": a.detail,
+            "status": a.status
+        } for a in result.action_plan
+    ]
+
+    # 2. Build the core database payload
+    payload = {
         "defect_class": result.defect_class,
         "defect_label": result.defect_label,
         "confidence": result.confidence,
-        "possible_symptoms": symptoms,  # New field!
+        "answers": answers,
+        "causes": formatted_causes,
+        "action_plan": formatted_actions,
+        "status": "diagnosed",
+    }
+
+    # 3. Route correctly depending on Text vs Image workflow
+    if session_id and session_id != "null":
+        # IMAGE WORKFLOW: Fetch existing data so we don't overwrite the image with blanks
+        existing = history.get_case(session_id) or {}
+        payload["session_id"] = session_id
+        payload["filename"] = existing.get("filename", "Image Upload")
+        payload["vision"] = existing.get("vision")
+        payload["quality"] = existing.get("quality")
+        payload["overall_quality_score"] = existing.get("overall_quality_score")
+        payload["annotated_image_base64"] = existing.get("annotated_image_base64")
+        payload["detections"] = existing.get("detections")
+        payload["detection_count"] = existing.get("detection_count")
+        
+        history.upsert_diagnosed_case(payload)
+    else:
+        # TEXT WORKFLOW: Create a brand new case and provide safe empty defaults for the UI
+        payload["filename"] = "Text Description"
+        payload["annotated_image_base64"] = ""
+        payload["overall_quality_score"] = 0
+        payload["quality"] = {}
+        payload["vision"] = {}
+        payload["detections"] = []
+        payload["detection_count"] = 0
+        
+        session_id = history.create_case(payload)
+
+    # 4. Return the complete package to the frontend
+    return {
+        "session_id": session_id,
+        "defect_class": result.defect_class,
+        "defect_label": result.defect_label,
+        "confidence": result.confidence,
+        "possible_symptoms": symptoms,
         "ai_explanation": reasoning_text,
         "cause_table": [
             {
-                "cause": c.cause_id,
-                "name": c.name,
-                "score": f"{int(c.likelihood_pct)}%",
-                "score_num": int(c.likelihood_pct),
-                "reasoning": c.reasoning 
-            } for c in result.causes[:3]  # Return top 3
+                "cause": c["cause_id"],
+                "name": c["name"],
+                "score": f"{int(c['likelihood_pct'])}%",
+                "score_num": int(c['likelihood_pct']),
+                "reasoning": c["reasoning"]
+            } for c in formatted_causes[:3] 
         ],
-        "action_plan": [
-            {
-                "step": a.step,
-                "cause": a.related_cause,
-                "action": a.detail,
-                "status": a.status
-            } for a in result.action_plan
-        ]
+        "action_plan": formatted_actions
     }
 
 
