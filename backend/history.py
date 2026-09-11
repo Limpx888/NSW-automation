@@ -329,3 +329,97 @@ def count_similar_cases(
         return total, None, 0
     top_name = max(cause_counts, key=cause_counts.get)
     return total, top_name, cause_counts[top_name]
+
+
+def get_history_analytics(
+    user_email: str | None = None,
+    year: int | None = None,
+    month: int | None = None,
+    db_path: Path | None = None,
+) -> dict[str, Any]:
+    if not user_email or not user_email.strip():
+        return {
+            "total_scans": 0,
+            "diagnosed_count": 0,
+            "top_defect": None,
+            "defect_distribution": [],
+            "available_years": [],
+            "available_months": [],
+        }
+
+    conn = connect(db_path)
+    rows = conn.execute(
+        """
+        SELECT session_id, defect_class, defect_label, status, created_at
+        FROM scan_cases
+        WHERE user_email = ?
+        ORDER BY created_at DESC
+        """,
+        (user_email.strip(),),
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        return {
+            "total_scans": 0,
+            "diagnosed_count": 0,
+            "top_defect": None,
+            "defect_distribution": [],
+            "available_years": [],
+            "available_months": [],
+        }
+
+    years_set: set[int] = set()
+    months_set: set[str] = set()
+
+    for r in rows:
+        created = str(r["created_at"])
+        if len(created) >= 4 and created[:4].isdigit():
+            years_set.add(int(created[:4]))
+        if len(created) >= 7 and created[:7].replace("-", "").isdigit():
+            months_set.add(created[:7])
+
+    available_years = sorted(years_set, reverse=True)
+    available_months = sorted(months_set, reverse=True)
+
+    # Filter rows by target period
+    filtered_rows = []
+    for r in rows:
+        created = str(r["created_at"])
+        if year is not None:
+            if not created.startswith(str(year)):
+                continue
+            if month is not None:
+                m_str = f"{year}-{month:02d}"
+                if not created.startswith(m_str):
+                    continue
+        filtered_rows.append(r)
+
+    total_scans = len(filtered_rows)
+    diagnosed_count = sum(1 for r in filtered_rows if r["status"] == "diagnosed")
+
+    defect_counts: dict[str, int] = {}
+    for r in filtered_rows:
+        label = r["defect_label"] or r["defect_class"] or "Unknown"
+        # Capitalize nicely
+        label_clean = label.replace("_", " ").upper()
+        defect_counts[label_clean] = defect_counts.get(label_clean, 0) + 1
+
+    distribution = []
+    top_defect = None
+    if total_scans > 0 and defect_counts:
+        sorted_counts = sorted(defect_counts.items(), key=lambda x: x[1], reverse=True)
+        top_defect = sorted_counts[0][0]
+        for label, cnt in sorted_counts:
+            pct = round((cnt / total_scans) * 100, 1)
+            distribution.append({"label": label, "count": cnt, "pct": pct})
+
+    return {
+        "total_scans": total_scans,
+        "diagnosed_count": diagnosed_count,
+        "top_defect": top_defect,
+        "defect_distribution": distribution,
+        "available_years": available_years,
+        "available_months": available_months,
+    }
+

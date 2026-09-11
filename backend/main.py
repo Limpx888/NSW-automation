@@ -575,6 +575,17 @@ def list_history(limit: int = 50, user_email: str | None = None) -> dict[str, An
     return {"cases": cases, "count": len(cases), "total": history.count_cases(user_email=email)}
 
 
+@app.get("/history/analytics")
+def history_analytics(
+    user_email: str | None = None,
+    year: int | None = None,
+    month: int | None = None,
+) -> dict[str, Any]:
+    email = user_email.strip() if user_email and user_email.strip() else None
+    return history.get_history_analytics(user_email=email, year=year, month=month)
+
+
+
 @app.get("/cases/{session_id}")
 def get_case(session_id: str) -> dict[str, Any]:
     case = history.get_case(session_id)

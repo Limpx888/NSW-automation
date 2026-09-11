@@ -179,6 +179,30 @@ export async function fetchHistory(limit = 50, userEmail?: string): Promise<{
   return res.json()
 }
 
+export type HistoryAnalytics = {
+  total_scans: number
+  diagnosed_count: number
+  top_defect: string | null
+  defect_distribution: { label: string; count: number; pct: number }[]
+  available_years: number[]
+  available_months: string[]
+}
+
+export async function fetchHistoryAnalytics(
+  userEmail?: string,
+  year?: number,
+  month?: number,
+): Promise<HistoryAnalytics> {
+  const params = new URLSearchParams()
+  if (userEmail) params.set("user_email", userEmail)
+  if (year !== undefined && year !== null) params.set("year", String(year))
+  if (month !== undefined && month !== null) params.set("month", String(month))
+
+  const res = await fetch(`${API_BASE}/history/analytics?${params.toString()}`)
+  if (!res.ok) throw new Error(await readError(res))
+  return res.json()
+}
+
 export async function fetchCase(sessionId: string): Promise<HistoryCaseDetail> {
   const res = await fetch(`${API_BASE}/cases/${sessionId}`)
   if (!res.ok) throw new Error(await readError(res))

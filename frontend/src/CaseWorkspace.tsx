@@ -3,7 +3,9 @@ import {
   downloadReport,
   fetchCase,
   fetchHistory,
+  fetchHistoryAnalytics,
   fetchReportData,
+  type HistoryAnalytics,
   type HistoryCaseDetail,
   type HistoryCaseSummary,
   type ReportPayload,
@@ -214,6 +216,11 @@ function formatConfidence(confidence?: number | null) {
   return `${pct.toFixed(0)}%`
 }
 
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+]
+
 function CasesWorkspace({
   title,
   subtitle,
@@ -235,11 +242,18 @@ function CasesWorkspace({
   const [report, setReport] = useState<ReportPayload | null>(null)
   const [previewBusy, setPreviewBusy] = useState(false)
 
+  // Analytics & Filtering state
+  const [viewMode, setViewMode] = useState<"monthly" | "annual">("monthly")
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1)
+  const [analytics, setAnalytics] = useState<HistoryAnalytics | null>(null)
+  const [analyticsLoading, setAnalyticsLoading] = useState(false)
+
   const load = async () => {
     setLoading(true)
     setError("")
     try {
-      const data = await fetchHistory(100, userEmail)
+      const data = await fetchHistory(200, userEmail)
       const list = filterDiagnosed
         ? data.cases.filter((c) => c.status === "diagnosed" || (c.top_cause && c.top_cause.length > 0))
         : data.cases
@@ -251,9 +265,44 @@ function CasesWorkspace({
     }
   }
 
+  const loadAnalytics = async () => {
+    if (!userEmail) return
+    setAnalyticsLoading(true)
+    try {
+      const yr = selectedYear
+      const mo = viewMode === "monthly" ? selectedMonth : undefined
+      const res = await fetchHistoryAnalytics(userEmail, yr, mo)
+      setAnalytics(res)
+      if (res.available_years.length > 0 && !res.available_years.includes(selectedYear)) {
+        setSelectedYear(res.available_years[0])
+      }
+    } catch (err) {
+      console.error("Analytics fetch error:", err)
+    } finally {
+      setAnalyticsLoading(false)
+    }
+  }
+
   useEffect(() => {
     void load()
   }, [filterDiagnosed, userEmail])
+
+  useEffect(() => {
+    void loadAnalytics()
+  }, [userEmail, viewMode, selectedYear, selectedMonth])
+
+  // Filter cases displayed based on selected time window
+  const filteredCases = cases.filter((c) => {
+    if (!c.created_at) return true
+    try {
+      const d = new Date(c.created_at)
+      if (d.getFullYear() !== selectedYear) return false
+      if (viewMode === "monthly" && (d.getMonth() + 1) !== selectedMonth) return false
+      return true
+    } catch {
+      return true
+    }
+  })
 
   const openCase = async (sessionId: string) => {
     setSelectedId(sessionId)
@@ -311,7 +360,10 @@ function CasesWorkspace({
           </div>
           <button
             type="button"
-            onClick={() => void load()}
+            onClick={() => {
+              void load()
+              void loadAnalytics()
+            }}
             style={{
               alignSelf: "flex-start",
               background: "white",
@@ -327,22 +379,182 @@ function CasesWorkspace({
           </button>
         </div>
 
+        {/* ── Timeframe & Analytics Bar ── */}
+        <div style={{ ...panel, marginBottom: 20, background: "white" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16, marginBottom: 18, borderBottom: "1px solid rgba(16,42,67,0.08)", paddingBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#102A43" }}>Timeframe:</span>
+              <div style={{ display: "inline-flex", background: "#F1F5F9", borderRadius: 999, padding: 3 }}>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("monthly")}
+                  style={{
+                    border: "none",
+                    borderRadius: 999,
+                    padding: "6px 14px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    background: viewMode === "monthly" ? "#0B6873" : "transparent",
+                    color: viewMode === "monthly" ? "white" : "#64748B",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  Monthly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("annual")}
+                  style={{
+                    border: "none",
+                    borderRadius: 999,
+                    padding: "6px 14px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    background: viewMode === "annual" ? "#0B6873" : "transparent",
+                    color: viewMode === "annual" ? "white" : "#64748B",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  Annual
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {viewMode === "monthly" && (
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  style={{
+                    padding: "7px 14px",
+                    borderRadius: 10,
+                    border: "1px solid rgba(16,42,67,0.15)",
+                    background: "#F8FAFC",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#102A43",
+                  }}
+                >
+                  {MONTH_NAMES.map((m, idx) => (
+                    <option key={m} value={idx + 1}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                style={{
+                  padding: "7px 14px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(16,42,67,0.15)",
+                  background: "#F8FAFC",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#102A43",
+                }}
+              >
+                {(analytics?.available_years?.length ? analytics.available_years : [2026, 2025]).map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Analytics KPI & Defect Chart */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+            {/* KPI Card 1: Top Defect Detected */}
+            <div style={{ background: "linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)", borderRadius: 16, padding: "16px 18px", border: "1px solid rgba(16,185,129,0.2)" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#166534", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6 }}>
+                MOST COMMON DEFECT ({viewMode === "monthly" ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}` : selectedYear})
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: "#064E3B", lineHeight: 1.2 }}>
+                {analyticsLoading ? "Loading..." : analytics?.top_defect || "None Detected"}
+              </div>
+              <p style={{ margin: "6px 0 0", fontSize: 12, color: "#15803D" }}>
+                {analytics?.defect_distribution?.[0]
+                  ? `${analytics.defect_distribution[0].count} scan(s) · ${analytics.defect_distribution[0].pct}% of period total`
+                  : "No defects logged in this period"}
+              </p>
+            </div>
+
+            {/* KPI Card 2: Period Total Scans */}
+            <div style={{ background: "linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)", borderRadius: 16, padding: "16px 18px", border: "1px solid rgba(56,189,248,0.2)" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#0369A1", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 6 }}>
+                TOTAL SCANS ({viewMode === "monthly" ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}` : selectedYear})
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: "#0C4A6E" }}>
+                {analyticsLoading ? "…" : analytics?.total_scans ?? 0}
+              </div>
+              <p style={{ margin: "4px 0 0", fontSize: 12, color: "#0284C7" }}>
+                {analytics?.diagnosed_count ?? 0} diagnosed with root-cause analysis
+              </p>
+            </div>
+          </div>
+
+          {/* Defect Distribution Chart */}
+          {analytics?.defect_distribution && analytics.defect_distribution.length > 0 && (
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px dashed rgba(16,42,67,0.12)" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#102A43", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
+                DEFECT FREQUENCY BREAKDOWN CHART
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {analytics.defect_distribution.map((item, idx) => (
+                  <div key={item.label}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: "#102A43", marginBottom: 4 }}>
+                      <span>{idx + 1}. {item.label}</span>
+                      <span>{item.count} scan{item.count > 1 ? "s" : ""} ({item.pct}%)</span>
+                    </div>
+                    <div style={{ height: 10, background: "#E2E8F0", borderRadius: 999, overflow: "hidden" }}>
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${item.pct}%`,
+                          background: idx === 0 ? "#D66A2C" : idx === 1 ? "#0B6873" : "#F2A65A",
+                          borderRadius: 999,
+                          transition: "width 0.5s ease-out",
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         {error && (
           <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 10, background: "rgba(239,68,68,0.1)", color: "#991B1B", fontSize: 13 }}>
             {error}
           </div>
         )}
 
+        {/* ── Case History List ── */}
         <div style={panel}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#102A43", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              RECORDS ({filteredCases.length})
+            </span>
+            <span style={{ fontSize: 12, color: "rgba(22,32,42,0.5)" }}>
+              {viewMode === "monthly" ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}` : selectedYear}
+            </span>
+          </div>
+
           {loading ? (
             <p style={{ margin: 0, color: "rgba(22,32,42,0.55)" }}>Loading cases…</p>
-          ) : cases.length === 0 ? (
+          ) : filteredCases.length === 0 ? (
             <p style={{ margin: 0, color: "rgba(22,32,42,0.55)" }}>
-              No cases yet. Run a Solder Paste Scan to save history and generate reports.
+              No cases found for {viewMode === "monthly" ? `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}` : selectedYear}. Run a Solder Paste Scan to add records.
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {cases.map((c) => {
+              {filteredCases.map((c) => {
                 const active = selectedId === c.session_id
                 return (
                   <button
