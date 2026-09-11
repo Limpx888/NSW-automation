@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     yolo_conf: float = 0.25
     yolo_iou: float = 0.45
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_model: str = "gemini-2.0-flash-lite"
     cors_origins: str = "http://localhost:8443,http://127.0.0.1:8443"
 
     @property
@@ -32,9 +32,6 @@ class Settings(BaseSettings):
             raw if raw.is_absolute() else BACKEND_DIR / raw,
             BACKEND_DIR / "weights" / "best.pt",
             ROOT / "backend" / "weights" / "best.pt",
-            ROOT / "best.pt",
-            ROOT / "best (2).pt",
-            ROOT / "best (1).pt",
         ]
         for candidate in candidates:
             if candidate.exists() and candidate.is_file():

@@ -331,6 +331,9 @@ export default function SolderPasteScan({ onBack, userEmail }: { onBack: () => v
       formData.append("frequency", freqVal) // <-- Using the formatted value
       formData.append("recent_change", answers["recent_change"] || "")
       formData.append("location", answers["location_large_branch"] || "")
+      if (userEmail) {
+        formData.append("user_email", userEmail)
+      }
 
       // ADD THIS LINE: Pass the existing session_id if it is an image upload
       if (analysisResult?.session_id) {

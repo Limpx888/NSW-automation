@@ -5,6 +5,7 @@ build/
 .env
 .env.local
 .env.*.local
+frontend/.env
 .vite/
 vite.config.*.timestamp-*
 *.tsbuildinfo
@@ -17,6 +18,14 @@ __pycache__/
 *.pyc
 _tmp_test.jpg
 backend/**/__pycache__/
+
+# Model weight files (large binary files — keep out of git)
+backend/weights/*.pt
+backend/weights/*.pkl
+*.pt
+
+# Database files
+data/*.db
 
 # Platform-managed agentplat state, not project source. In the
 # client-initiated single-repo workspace layout (make's `Path: "."` spec) the

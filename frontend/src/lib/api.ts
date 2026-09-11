@@ -128,6 +128,7 @@ export async function analyzeImage(file: File, userEmail?: string): Promise<Anal
 export async function diagnoseWorkflow(
   analysis: AnalyzeResponse,
   answers: Record<string, string>,
+  userEmail?: string,
 ): Promise<DiagnoseResponse> {
   const res = await fetch(`${API_BASE}/workflow/diagnose`, {
     method: "POST",
@@ -139,6 +140,7 @@ export async function diagnoseWorkflow(
       answers,
       analysis,
       session_id: analysis.session_id,
+      user_email: userEmail || (analysis as any).user_email,
     }),
   })
   if (!res.ok) throw new Error(await readError(res))
