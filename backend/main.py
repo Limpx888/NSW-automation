@@ -113,7 +113,7 @@ def startup() -> None:
         print(f"Error loading ML model: {e}")
         ml_pipeline = None
 
-@app.post("/api/diagnose")
+@app.post("/diagnose")
 async def run_diagnostics(
     yolo_defect: str = Form("inconsistent_size"),
     material: str = Form(""),
@@ -121,7 +121,8 @@ async def run_diagnostics(
     frequency: str = Form(""),
     recent_change: str = Form(""),
     location: str = Form(""),
-    session_id: str = Form(None)
+    session_id: str = Form(None),
+    user_email: str = Form(None),
 ):
     # 1. Calculate Dynamic Confidence based on known answers
     known_count = sum(1 for v in [material, amount, frequency, recent_change, location] if v and "unknown" not in v.lower())
@@ -288,6 +289,7 @@ async def run_diagnostics(
         "causes": formatted_causes,
         "action_plan": formatted_actions,
         "status": "diagnosed",
+        "user_email": user_email or None,
     }
 
     # 3. Route correctly depending on Text vs Image workflow
@@ -368,7 +370,10 @@ def meta() -> dict[str, Any]:
 
 
 @app.post("/analyze")
-async def analyze(file: UploadFile = File(...)) -> dict[str, Any]:
+async def analyze(
+    file: UploadFile = File(...),
+    user_email: str = Form(None),
+) -> dict[str, Any]:
     """Upload a defect image → YOLO boxes/masks + quality assessment + follow-up prompts."""
     data = await file.read()
     if not data:
@@ -393,6 +398,7 @@ async def analyze(file: UploadFile = File(...)) -> dict[str, Any]:
     )
     payload = {
         "filename": file.filename,
+        "user_email": user_email or None,
         "vision": vision,
         "quality": quality,
         "defect_label": vision["defect_label"],
@@ -559,9 +565,10 @@ def qa(payload: QaRequest) -> dict[str, Any]:
 
 
 @app.get("/history")
-def list_history(limit: int = 50) -> dict[str, Any]:
-    cases = history.list_cases(limit=max(1, min(limit, 200)))
-    return {"cases": cases, "count": len(cases), "total": history.count_cases()}
+def list_history(limit: int = 50, user_email: str | None = None) -> dict[str, Any]:
+    email = user_email.strip() if user_email and user_email.strip() else None
+    cases = history.list_cases(limit=max(1, min(limit, 200)), user_email=email)
+    return {"cases": cases, "count": len(cases), "total": history.count_cases(user_email=email)}
 
 
 @app.get("/cases/{session_id}")

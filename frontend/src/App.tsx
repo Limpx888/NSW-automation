@@ -988,11 +988,11 @@ export default function App() {
         </>
       )}
 
-      {view === 'scan' && <SolderPasteScan onBack={() => navigate('home')} />}
+      {view === 'scan' && <SolderPasteScan onBack={() => navigate('home')} userEmail={user?.email} />}
 
-      {view === 'reports' && <ReportsView onBack={() => navigate('home')} />}
+      {view === 'reports' && <ReportsView onBack={() => navigate('home')} userEmail={user?.email} />}
 
-      {view === 'history' && <HistoryView onBack={() => navigate('home')} />}
+      {view === 'history' && <HistoryView onBack={() => navigate('home')} userEmail={user?.email} />}
     </div>
   )
 }

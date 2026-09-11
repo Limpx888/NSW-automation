@@ -179,7 +179,7 @@ const card: CSSProperties = {
   boxShadow: "0 16px 40px rgba(16,42,67,0.06)",
 }
 
-export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
+export default function SolderPasteScan({ onBack, userEmail }: { onBack: () => void; userEmail?: string }) {
   type FlowStep = "select" | "describe" | "upload" | "quiz" | "results"
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -278,7 +278,7 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
     setError("")
     resetDownstream()
     try {
-      const data = await analyzeImage(file)
+      const data = await analyzeImage(file, userEmail)
       setResult(data)
       if (data.defect_label) {
         setDetectedDefect({
@@ -336,8 +336,11 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
       if (analysisResult?.session_id) {
         formData.append("session_id", analysisResult.session_id)
       }
+      if (userEmail) {
+        formData.append("user_email", userEmail)
+      }
 
-      const res = await fetch('http://localhost:8000/api/diagnose', {
+      const res = await fetch('/api/diagnose', {
         method: 'POST',
         body: formData,
       })

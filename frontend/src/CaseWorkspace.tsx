@@ -219,11 +219,13 @@ function CasesWorkspace({
   subtitle,
   filterDiagnosed = false,
   onBack,
+  userEmail,
 }: {
   title: string
   subtitle: string
   filterDiagnosed?: boolean
   onBack: () => void
+  userEmail?: string
 }) {
   const [cases, setCases] = useState<HistoryCaseSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -237,7 +239,7 @@ function CasesWorkspace({
     setLoading(true)
     setError("")
     try {
-      const data = await fetchHistory(100)
+      const data = await fetchHistory(100, userEmail)
       const list = filterDiagnosed
         ? data.cases.filter((c) => c.status === "diagnosed" || (c.top_cause && c.top_cause.length > 0))
         : data.cases
@@ -251,7 +253,7 @@ function CasesWorkspace({
 
   useEffect(() => {
     void load()
-  }, [filterDiagnosed])
+  }, [filterDiagnosed, userEmail])
 
   const openCase = async (sessionId: string) => {
     setSelectedId(sessionId)
@@ -432,23 +434,25 @@ function CasesWorkspace({
   )
 }
 
-export function HistoryView({ onBack }: { onBack: () => void }) {
+export function HistoryView({ onBack, userEmail }: { onBack: () => void; userEmail?: string }) {
   return (
     <CasesWorkspace
       title="Case history"
       subtitle="Every solder-paste scan is saved here. Open a case to review evidence or regenerate its report."
       onBack={onBack}
+      userEmail={userEmail}
     />
   )
 }
 
-export function ReportsView({ onBack }: { onBack: () => void }) {
+export function ReportsView({ onBack, userEmail }: { onBack: () => void; userEmail?: string }) {
   return (
     <CasesWorkspace
       title="Diagnostic reports"
       subtitle="View previous reports with cause charts and deep analysis, then download as PDF or Word."
       filterDiagnosed
       onBack={onBack}
+      userEmail={userEmail}
     />
   )
 }

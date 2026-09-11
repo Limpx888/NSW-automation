@@ -116,9 +116,10 @@ async function readError(res: Response) {
   }
 }
 
-export async function analyzeImage(file: File): Promise<AnalyzeResponse> {
+export async function analyzeImage(file: File, userEmail?: string): Promise<AnalyzeResponse> {
   const form = new FormData()
   form.append("file", file)
+  if (userEmail) form.append("user_email", userEmail)
   const res = await fetch(`${API_BASE}/analyze`, { method: "POST", body: form })
   if (!res.ok) throw new Error(await readError(res))
   return res.json()
@@ -164,12 +165,14 @@ export async function fetchMeta() {
   return res.json()
 }
 
-export async function fetchHistory(limit = 50): Promise<{
+export async function fetchHistory(limit = 50, userEmail?: string): Promise<{
   cases: HistoryCaseSummary[]
   count: number
   total: number
 }> {
-  const res = await fetch(`${API_BASE}/history?limit=${limit}`)
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (userEmail) params.set("user_email", userEmail)
+  const res = await fetch(`${API_BASE}/history?${params.toString()}`)
   if (!res.ok) throw new Error(await readError(res))
   return res.json()
 }

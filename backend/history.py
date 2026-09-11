@@ -12,40 +12,50 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "data" / "scan_cases.db"
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS scan_cases (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT NOT NULL UNIQUE,
-    filename TEXT,
-    defect_class TEXT,
-    defect_label TEXT,
-    confidence REAL,
-    detection_count INTEGER DEFAULT 0,
-    quality_score INTEGER,
-    shape_consistency REAL,
-    size_consistency REAL,
-    dispensing_position REAL,
-    defect_risk REAL,
-    answers_json TEXT,
-    causes_json TEXT,
-    action_plan_json TEXT,
-    detections_json TEXT,
-    annotated_image_base64 TEXT,
-    status TEXT DEFAULT 'analyzed',
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_scan_cases_created ON scan_cases(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_scan_cases_defect ON scan_cases(defect_class);
-"""
-
 
 def connect(db_path: Path | None = None) -> sqlite3.Connection:
     path = Path(db_path) if db_path else DEFAULT_DB
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA)
+
+    # Bootstrap table without user_email index (safe for old DBs)
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS scan_cases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL UNIQUE,
+        filename TEXT,
+        defect_class TEXT,
+        defect_label TEXT,
+        confidence REAL,
+        detection_count INTEGER DEFAULT 0,
+        quality_score INTEGER,
+        shape_consistency REAL,
+        size_consistency REAL,
+        dispensing_position REAL,
+        defect_risk REAL,
+        answers_json TEXT,
+        causes_json TEXT,
+        action_plan_json TEXT,
+        detections_json TEXT,
+        annotated_image_base64 TEXT,
+        status TEXT DEFAULT 'analyzed',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_scan_cases_created ON scan_cases(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_scan_cases_defect ON scan_cases(defect_class);
+    """)
+
+    # Auto-migrate: add user_email column if it doesn't exist (for existing DBs)
+    existing_cols = [r["name"] for r in conn.execute("PRAGMA table_info(scan_cases)").fetchall()]
+    if "user_email" not in existing_cols:
+        conn.execute("ALTER TABLE scan_cases ADD COLUMN user_email TEXT")
+        conn.commit()
+
+    # Now safe to create user index (column guaranteed to exist)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_scan_cases_user ON scan_cases(user_email)")
+    conn.commit()
     return conn
 
 
@@ -55,6 +65,54 @@ def _now() -> str:
 
 def _dumps(value: Any) -> str:
     return json.dumps(value if value is not None else None, default=str)
+
+
+def _loads(raw: str | None) -> Any:
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+
+def _row_to_summary(row: sqlite3.Row) -> dict[str, Any]:
+    causes = _loads(row["causes_json"]) or []
+    top = causes[0] if isinstance(causes, list) and causes else None
+    cols = row.keys()
+    return {
+        "session_id": row["session_id"],
+        "user_email": row["user_email"] if "user_email" in cols else None,
+        "filename": row["filename"],
+        "defect_class": row["defect_class"],
+        "defect_label": row["defect_label"],
+        "confidence": row["confidence"],
+        "detection_count": row["detection_count"],
+        "quality_score": row["quality_score"],
+        "top_cause": (top or {}).get("name") if isinstance(top, dict) else None,
+        "top_cause_pct": (top or {}).get("likelihood_pct") if isinstance(top, dict) else None,
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _row_to_detail(row: sqlite3.Row) -> dict[str, Any]:
+    summary = _row_to_summary(row)
+    summary.update(
+        {
+            "shape_consistency": row["shape_consistency"],
+            "size_consistency": row["size_consistency"],
+            "dispensing_position": row["dispensing_position"],
+            "defect_risk": row["defect_risk"],
+            "answers": _loads(row["answers_json"]) or {},
+            "causes": _loads(row["causes_json"]) or [],
+            "action_plan": _loads(row["action_plan_json"]) or [],
+            "detections": _loads(row["detections_json"]) or [],
+            "annotated_image_base64": row["annotated_image_base64"],
+        }
+    )
+    return summary
 
 
 def create_case(payload: dict[str, Any], db_path: Path | None = None) -> str:
@@ -68,15 +126,16 @@ def create_case(payload: dict[str, Any], db_path: Path | None = None) -> str:
     conn.execute(
         """
         INSERT INTO scan_cases (
-            session_id, filename, defect_class, defect_label, confidence,
+            session_id, user_email, filename, defect_class, defect_label, confidence,
             detection_count, quality_score, shape_consistency, size_consistency,
             dispensing_position, defect_risk, answers_json, causes_json,
             action_plan_json, detections_json, annotated_image_base64,
             status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             session_id,
+            payload.get("user_email"),
             payload.get("filename"),
             payload.get("defect_class") or vision.get("defect_class"),
             payload.get("defect_label") or vision.get("defect_label"),
@@ -96,7 +155,6 @@ def create_case(payload: dict[str, Any], db_path: Path | None = None) -> str:
             _dumps(payload.get("causes")),
             _dumps(payload.get("action_plan")),
             _dumps(payload.get("detections") or vision.get("detections") or []),
-            # Keep thumbnail-capable image; can be large but useful for history replay
             payload.get("annotated_image_base64") or vision.get("annotated_image_base64"),
             payload.get("status") or "analyzed",
             now,
@@ -123,6 +181,7 @@ def update_case(session_id: str, payload: dict[str, Any], db_path: Path | None =
     values: list[Any] = []
 
     mapping = {
+        "user_email": payload.get("user_email"),
         "defect_class": payload.get("defect_class"),
         "defect_label": payload.get("defect_label"),
         "confidence": payload.get("confidence"),
@@ -136,7 +195,6 @@ def update_case(session_id: str, payload: dict[str, Any], db_path: Path | None =
     }
     for col, val in mapping.items():
         if val is None and col not in {"answers_json", "causes_json", "action_plan_json"}:
-            # allow explicit null only for JSON when key present — handled above
             if col.endswith("_json"):
                 fields.append(f"{col} = ?")
                 values.append(val)
@@ -180,19 +238,27 @@ def upsert_diagnosed_case(payload: dict[str, Any], db_path: Path | None = None) 
     return create_case({**payload, "status": "diagnosed"}, db_path=db_path)
 
 
-def list_cases(limit: int = 50, db_path: Path | None = None) -> list[dict[str, Any]]:
+def list_cases(
+    limit: int = 50,
+    user_email: str | None = None,
+    db_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    if not user_email or not user_email.strip():
+        return []
+
     conn = connect(db_path)
     rows = conn.execute(
         """
-        SELECT session_id, filename, defect_class, defect_label, confidence,
+        SELECT session_id, user_email, filename, defect_class, defect_label, confidence,
                detection_count, quality_score, shape_consistency, size_consistency,
                dispensing_position, defect_risk, answers_json, causes_json,
                action_plan_json, status, created_at, updated_at
         FROM scan_cases
+        WHERE user_email = ?
         ORDER BY created_at DESC
         LIMIT ?
         """,
-        (int(limit),),
+        (user_email.strip(), int(limit)),
     ).fetchall()
     conn.close()
     return [_row_to_summary(r) for r in rows]
@@ -210,9 +276,18 @@ def get_case(session_id: str, db_path: Path | None = None) -> dict[str, Any] | N
     return _row_to_detail(row)
 
 
-def count_cases(db_path: Path | None = None) -> int:
+def count_cases(
+    user_email: str | None = None,
+    db_path: Path | None = None,
+) -> int:
+    if not user_email or not user_email.strip():
+        return 0
+
     conn = connect(db_path)
-    row = conn.execute("SELECT COUNT(*) AS n FROM scan_cases").fetchone()
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM scan_cases WHERE user_email = ?",
+        (user_email.strip(),),
+    ).fetchone()
     conn.close()
     return int(row["n"] if row else 0)
 
@@ -254,49 +329,3 @@ def count_similar_cases(
         return total, None, 0
     top_name = max(cause_counts, key=cause_counts.get)
     return total, top_name, cause_counts[top_name]
-
-
-def _loads(raw: str | None) -> Any:
-    if not raw:
-        return None
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return None
-
-
-def _row_to_summary(row: sqlite3.Row) -> dict[str, Any]:
-    causes = _loads(row["causes_json"]) or []
-    top = causes[0] if isinstance(causes, list) and causes else None
-    return {
-        "session_id": row["session_id"],
-        "filename": row["filename"],
-        "defect_class": row["defect_class"],
-        "defect_label": row["defect_label"],
-        "confidence": row["confidence"],
-        "detection_count": row["detection_count"],
-        "quality_score": row["quality_score"],
-        "top_cause": (top or {}).get("name") if isinstance(top, dict) else None,
-        "top_cause_pct": (top or {}).get("likelihood_pct") if isinstance(top, dict) else None,
-        "status": row["status"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-    }
-
-
-def _row_to_detail(row: sqlite3.Row) -> dict[str, Any]:
-    summary = _row_to_summary(row)
-    summary.update(
-        {
-            "shape_consistency": row["shape_consistency"],
-            "size_consistency": row["size_consistency"],
-            "dispensing_position": row["dispensing_position"],
-            "defect_risk": row["defect_risk"],
-            "answers": _loads(row["answers_json"]) or {},
-            "causes": _loads(row["causes_json"]) or [],
-            "action_plan": _loads(row["action_plan_json"]) or [],
-            "detections": _loads(row["detections_json"]) or [],
-            "annotated_image_base64": row["annotated_image_base64"],
-        }
-    )
-    return summary
