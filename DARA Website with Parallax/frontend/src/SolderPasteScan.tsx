@@ -110,6 +110,26 @@ function statusStyle(status: string) {
   return { bg: "rgba(16,42,67,0.08)", color: "#4B5563" }
 }
 
+function formatActionTitle(raw: string): string {
+  if (!raw) return ""
+  const map: Record<string, string> = {
+    vision: "Vision Check",
+    air_bubble: "Air Bubble",
+    nozzle_blockage: "Nozzle Blockage",
+    viscosity_change: "Material Viscosity Change",
+    material_viscosity: "Material Viscosity Change",
+    incorrect_parameter: "Incorrect Parameter",
+    equipment_problem: "Equipment Problem",
+    substrate_pcb: "Substrate / PCB Quality",
+    environmental: "Environmental Factors",
+  }
+  const key = raw.toLowerCase().trim()
+  if (map[key]) return map[key]
+  return raw
+    .replace(/[_-]/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
 const card: CSSProperties = {
   background: "rgba(255,255,255,0.72)",
   borderRadius: 22,
@@ -121,20 +141,31 @@ const card: CSSProperties = {
 export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
   type FlowStep = "select" | "describe" | "upload" | "quiz" | "results"
   const inputRef = useRef<HTMLInputElement>(null)
-  
+
   const [flowStep, setFlowStep] = useState<FlowStep>("select")
   const [entryType, setEntryType] = useState<"describe" | "upload" | null>(null)
   const [problemDesc, setProblemDesc] = useState("")
 
   const [quizStep, setQuizStep] = useState(0)
   const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({})
-  
+  const [autoExtracted, setAutoExtracted] = useState<string[]>([])
+  const [extracting, setExtracting] = useState(false)
+  const [detectedDefect, setDetectedDefect] = useState<{ label: string; confidence: number; possible_symptoms?: string[] } | null>(null)
+  const [completedSteps, setCompletedSteps] = useState<Record<number, boolean>>({})
+
+  const toggleStepCompleted = (stepNumber: number) => {
+    setCompletedSteps(prev => ({
+      ...prev,
+      [stepNumber]: !prev[stepNumber]
+    }))
+  }
+
   const [preview, setPreview] = useState("")
   const [file, setFile] = useState<File | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [diagnosing, setDiagnosing] = useState(false)
   const [result, setResult] = useState<AnalyzeResponse | null>(null)
-  
+
   const [causes, setCauses] = useState<CauseRow[]>([])
   const [actionPlan, setActionPlan] = useState<ActionStep[]>([])
   const [error, setError] = useState("")
@@ -153,7 +184,39 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
     setCauses([])
     setActionPlan([])
     setChat([])
+    setDetectedDefect(null)
+    setCompletedSteps({})
   }
+
+  const startNewScan = () => {
+    setFlowStep("select")
+    setEntryType(null)
+    setProblemDesc("")
+    setQuizStep(0)
+    setQuizAnswers({})
+    setAutoExtracted([])
+    setExtracting(false)
+    setDetectedDefect(null)
+    setCompletedSteps({})
+    setPreview("")
+    setFile(null)
+    setAnalyzing(false)
+    setDiagnosing(false)
+    setResult(null)
+    setCauses([])
+    setActionPlan([])
+    setError("")
+    setQuestion("")
+    setChat([])
+    setAsking(false)
+  }
+
+  // Clear state on unmount so returning to scan starts with a completely fresh slate
+  useEffect(() => {
+    return () => {
+      startNewScan()
+    }
+  }, [])
 
   const onPick = (picked: File | null) => {
     setError("")
@@ -175,6 +238,13 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
     try {
       const data = await analyzeImage(file)
       setResult(data)
+      if (data.defect_label) {
+        setDetectedDefect({
+          label: data.defect_label,
+          confidence: data.confidence ?? (data.vision as any)?.confidence ?? 0.85,
+          possible_symptoms: data.possible_symptoms || []
+        })
+      }
       setChat([
         {
           role: "assistant",
@@ -194,8 +264,18 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
     setDiagnosing(true)
     setError("")
     try {
+      // Add this logic to map the quiz answer to a backend class
+      let defectClass = analysisResult?.defect_class
+      if (!defectClass) {
+        const amtAnswer = (quizAnswers[1] || "").toLowerCase()
+        if (amtAnswer.includes("too large")) defectClass = "excess_volume"
+        else if (amtAnswer.includes("missing")) defectClass = "missing_deposit"
+        else if (amtAnswer.includes("too small")) defectClass = "insufficient_volume"
+        else defectClass = "inconsistent_size"
+      }
+
       const formData = new FormData()
-      formData.append('yolo_defect', analysisResult?.defect_class || description || 'inconsistent_size')
+      formData.append('yolo_defect', defectClass)
       formData.append('material', quizAnswers[0] || '')
       formData.append('amount', quizAnswers[1] || '')
       formData.append('frequency', quizAnswers[2] || '')
@@ -208,24 +288,33 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
       })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
-      
+
+      // Pull defect_label and confidence from API response (Step 2 requirement)
+      if (data.defect_label) {
+        setDetectedDefect({
+          label: data.defect_label,
+          confidence: data.confidence ?? 0.85,
+          possible_symptoms: data.possible_symptoms || []
+        })
+      }
+
       const newCauses = data.cause_table.map((c: any) => ({
         cause_id: c.cause,
-        name: c.cause,
+        name: c.name || c.cause,
         likelihood_pct: c.score_num,
         reasoning: c.reasoning
       }))
       const newActionPlan = data.action_plan.map((a: any) => ({
         step: a.step,
-        title: a.cause,
+        title: formatActionTitle(a.cause || a.related_cause),
         detail: a.action,
         status: a.status,
         related_cause: a.cause
       }))
-      
+
       setCauses(newCauses)
       setActionPlan(newActionPlan)
-      
+
       const top = newCauses[0]
       setChat((prev) => [
         ...prev,
@@ -288,7 +377,11 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
           </h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <button
-              onClick={() => { setEntryType("upload"); setFlowStep("upload") }}
+              onClick={() => {
+                startNewScan()
+                setEntryType("upload")
+                setFlowStep("upload")
+              }}
               style={{ padding: "30px", borderRadius: 24, border: "2px solid #E5E7EB", background: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 20, transition: "all 0.2s" }}
             >
               <div style={{ width: 60, height: 60, borderRadius: "50%", background: "rgba(11,104,115,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#0B6873" }}>
@@ -301,9 +394,13 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
                 <div style={{ fontSize: 14, color: "#6B7280" }}>Let the YOLO vision model detect the defect automatically.</div>
               </div>
             </button>
-            
+
             <button
-              onClick={() => { setEntryType("describe"); setFlowStep("describe") }}
+              onClick={() => {
+                startNewScan()
+                setEntryType("describe")
+                setFlowStep("describe")
+              }}
               style={{ padding: "30px", borderRadius: 24, border: "2px solid #E5E7EB", background: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 20, transition: "all 0.2s" }}
             >
               <div style={{ width: 60, height: 60, borderRadius: "50%", background: "rgba(214,106,44,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#D66A2C" }}>
@@ -322,6 +419,106 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
     )
   }
 
+  const handleDescribeSubmit = async () => {
+    if (!problemDesc.trim()) {
+      setError("Please provide a description")
+      return
+    }
+    setError("")
+    setExtracting(true)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 4000)
+    try {
+      const res = await fetch("http://localhost:8000/api/extract_symptoms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: problemDesc }),
+        signal: controller.signal,
+      })
+      clearTimeout(timeoutId)
+      const symptoms = res.ok ? await res.json() : null
+      const updatedAnswers: Record<number, string> = { ...quizAnswers }
+      const extractedList: string[] = []
+
+      // 1. Amount -> question index 1
+      if (symptoms?.amount && symptoms.amount !== "unknown") {
+        const amt = String(symptoms.amount).toLowerCase()
+        if (amt === "too_small") {
+          updatedAnswers[1] = "Too Small (Insufficient volume or starved dot/line)"
+          extractedList.push("Amount: Too Small")
+        } else if (amt === "too_large" || amt === "spreading") {
+          updatedAnswers[1] = "Too Large (Excess volume, slumping, or spreading)"
+          extractedList.push("Amount: Too Large")
+        } else if (["inconsistent", "irregular", "stringing"].includes(amt)) {
+          updatedAnswers[1] = "Inconsistent (Fluctuating between too large and too small)"
+          extractedList.push("Amount: Inconsistent")
+        } else if (amt === "missing") {
+          updatedAnswers[1] = "Completely Missing (Zero deposit / skipped shot)"
+          extractedList.push("Amount: Completely Missing")
+        }
+      }
+
+      // 2. Frequency -> question index 2
+      if (symptoms?.frequency && symptoms.frequency !== "unknown") {
+        const freq = String(symptoms.frequency).toLowerCase()
+        if (freq === "continuous") {
+          updatedAnswers[2] = "Continuously (Occurs on every single dispensing target)"
+          extractedList.push("Frequency: Continuous")
+        } else if (freq === "occasional") {
+          updatedAnswers[2] = "Occasionally / Intermittently (Occurs randomly across target array)"
+          extractedList.push("Frequency: Occasional")
+        }
+      }
+
+      // 3. Location -> question index 4
+      if (symptoms?.location && symptoms.location !== "unknown") {
+        const loc = String(symptoms.location).toLowerCase()
+        if (loc === "single") {
+          updatedAnswers[4] = "Single Specific Location (Isolates to one specific pin, pad, or corner)"
+          extractedList.push("Location: Single Location")
+        } else if (loc === "multiple") {
+          updatedAnswers[4] = "Multiple Random Locations (Scattered sporadically across the board)"
+          extractedList.push("Location: Multiple Locations")
+        }
+      }
+
+      // 4. Recent Change -> question index 3
+      if (symptoms?.recent_change && symptoms.recent_change !== "unknown") {
+        const rec = String(symptoms.recent_change).toLowerCase()
+        if (rec === "nozzle") {
+          updatedAnswers[3] = "Yes – Nozzle tip replaced or cleaned"
+          extractedList.push("Change: Nozzle tip replaced")
+        } else if (rec === "syringe") {
+          updatedAnswers[3] = "Yes – New syringe barrel or material batch installed"
+          extractedList.push("Change: New syringe/batch")
+        } else if (rec === "parameters") {
+          updatedAnswers[3] = "Yes – Pressure, shot timer, or standoff height adjusted"
+          extractedList.push("Change: Parameters adjusted")
+        } else if (rec === "none") {
+          updatedAnswers[3] = "No – Running existing baseline process without recent changes"
+          extractedList.push("Change: Baseline (no change)")
+        }
+      }
+
+      setQuizAnswers(updatedAnswers)
+      setAutoExtracted(extractedList)
+
+      // Advance to the first unanswered question
+      let nextStep = 0
+      while (nextStep < QUIZ_QUESTIONS.length && updatedAnswers[nextStep] !== undefined) {
+        nextStep++
+      }
+
+      setQuizStep(nextStep)
+      setFlowStep("quiz")
+    } catch (err) {
+      console.warn("Extraction failed, proceeding to quiz normally", err)
+      setFlowStep("quiz")
+    } finally {
+      setExtracting(false)
+    }
+  }
+
   // Render Describe Input Screen
   if (flowStep === "describe") {
     return (
@@ -333,20 +530,18 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
           <div style={{ background: "white", borderRadius: 24, padding: "32px", boxShadow: "0 10px 40px rgba(0,0,0,0.05)" }}>
             <h2 style={{ fontSize: 22, fontWeight: 700, color: "#102A43", marginBottom: 8 }}>Describe the Defect</h2>
             <p style={{ color: "#6B7280", fontSize: 14, marginBottom: 24 }}>What specific problem are you observing with the dispensing?</p>
-            <textarea 
+            <textarea
               value={problemDesc}
               onChange={e => setProblemDesc(e.target.value)}
               placeholder="e.g., Slumping paste, missing dots, excess volume..."
               style={{ width: "100%", minHeight: 140, padding: 16, borderRadius: 12, border: "1px solid #E5E7EB", fontSize: 15, fontFamily: "inherit", resize: "vertical", outline: "none", marginBottom: 24 }}
             />
             <button
-              onClick={() => {
-                if (!problemDesc.trim()) { setError("Please provide a description"); return; }
-                setError(""); setFlowStep("quiz")
-              }}
-              style={{ width: "100%", padding: "16px", borderRadius: 12, background: "#0B6873", color: "white", fontSize: 16, fontWeight: 700, border: "none", cursor: "pointer" }}
+              onClick={handleDescribeSubmit}
+              disabled={extracting}
+              style={{ width: "100%", padding: "16px", borderRadius: 12, background: extracting ? "#94A3B8" : "#0B6873", color: "white", fontSize: 16, fontWeight: 700, border: "none", cursor: extracting ? "not-allowed" : "pointer" }}
             >
-              Next Step
+              {extracting ? "Extracting symptoms with AI…" : "Next Step"}
             </button>
             {error && <div style={{ marginTop: 12, color: "#DC2626", fontSize: 14, textAlign: "center" }}>{error}</div>}
           </div>
@@ -361,16 +556,34 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
     return (
       <section style={{ minHeight: "100vh", padding: "40px 20px", display: "flex", justifyContent: "center", background: "#F5F8FA" }}>
         <div style={{ width: "100%", maxWidth: 600, background: "white", borderRadius: 24, padding: "32px", boxShadow: "0 10px 40px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 40 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
             <span style={{ fontWeight: 700, color: "#1F2937", fontSize: 16 }}>{quizStep + 1}/{QUIZ_QUESTIONS.length}</span>
             <div style={{ flex: 1, height: 8, background: "#E5E7EB", borderRadius: 999, overflow: "hidden" }}>
               <div style={{ height: "100%", width: `${((quizStep + 1) / QUIZ_QUESTIONS.length) * 100}%`, background: "#93C5FD", borderRadius: 999, transition: "width 0.3s ease" }} />
             </div>
             <button onClick={() => setFlowStep(entryType === "upload" ? "upload" : "describe")} style={{ width: 36, height: 36, borderRadius: "50%", background: "#F3F4F6", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1L13 13M1 13L13 1" stroke="#4B5563" strokeWidth="2" strokeLinecap="round"/></svg>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1L13 13M1 13L13 1" stroke="#4B5563" strokeWidth="2" strokeLinecap="round" /></svg>
             </button>
           </div>
-          
+
+          {autoExtracted.length > 0 && (
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 14px",
+              background: "rgba(11,104,115,0.08)",
+              border: "1px solid rgba(11,104,115,0.2)",
+              borderRadius: 12,
+              marginBottom: 20,
+              fontSize: 13,
+              color: "#0B6873"
+            }}>
+              <span>✨</span>
+              <span><strong>Auto-extracted:</strong> {autoExtracted.join(" · ")} (questions skipped)</span>
+            </div>
+          )}
+
           <h2 style={{ textAlign: "center", fontSize: 24, fontWeight: 700, color: "#1E3A8A", marginBottom: 32, lineHeight: 1.4 }}>
             {currentQ.title}
           </h2>
@@ -382,8 +595,14 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
                 <button
                   key={opt}
                   onClick={() => {
-                    setQuizAnswers(prev => ({ ...prev, [quizStep]: opt }));
-                    setTimeout(() => setQuizStep(s => s + 1), 300);
+                    const updated = { ...quizAnswers, [quizStep]: opt };
+                    setQuizAnswers(updated);
+                    // Skip any already-extracted or already-answered questions
+                    let next = quizStep + 1;
+                    while (next < QUIZ_QUESTIONS.length && updated[next] !== undefined) {
+                      next++;
+                    }
+                    setTimeout(() => setQuizStep(next), 300);
                   }}
                   style={{
                     display: "flex",
@@ -424,17 +643,42 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
       }}
     >
       <div style={{ maxWidth: 1180, margin: "0 auto" }}>
-        <button
-          type="button"
-          onClick={() => {
-            if (flowStep === 'results' && entryType === 'upload') setFlowStep('upload')
-            else if (flowStep === 'results' && entryType === 'describe') setFlowStep('describe')
-            else setFlowStep('select')
-          }}
-          style={{ background: "none", border: "none", color: "#0B6873", fontSize: 13, fontWeight: 600, cursor: "pointer", marginBottom: 20, padding: 0 }}
-        >
-          ← {flowStep === 'results' ? 'Back to editing' : 'Back to selection'}
-        </button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (flowStep === 'results' && entryType === 'upload') setFlowStep('upload')
+              else if (flowStep === 'results' && entryType === 'describe') setFlowStep('describe')
+              else startNewScan()
+            }}
+            style={{ background: "none", border: "none", color: "#0B6873", fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0 }}
+          >
+            ← {flowStep === 'results' ? 'Back to editing' : 'Back to selection'}
+          </button>
+
+          {flowStep === 'results' && (
+            <button
+              type="button"
+              onClick={startNewScan}
+              style={{
+                background: "white",
+                color: "#0B6873",
+                border: "1px solid rgba(11,104,115,0.3)",
+                borderRadius: 999,
+                padding: "8px 18px",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                display: "flex",
+                alignItems: "center",
+                gap: 6
+              }}
+            >
+              <span>↺</span> Start New Scan
+            </button>
+          )}
+        </div>
 
         <div style={{ marginBottom: 28 }}>
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#0B6873", marginBottom: 8 }}>
@@ -556,6 +800,59 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
           <>
             <div className="scan-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(280px, 0.9fr)", gap: 20, marginTop: 20, alignItems: "start" }}>
               <div style={card}>
+                {/* Step 2 Summary: Identify the Dispensing Defect */}
+                {detectedDefect && (
+                  <div style={{
+                    padding: "16px 18px",
+                    background: "rgba(11,104,115,0.08)",
+                    border: "1px solid rgba(11,104,115,0.25)",
+                    borderRadius: 14,
+                    marginBottom: 18
+                  }}>
+                    <div style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", color: "#0B6873", textTransform: "uppercase", marginBottom: 2 }}>
+                          IDENTIFIED DISPENSING DEFECT
+                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: "#102A43" }}>
+                          {detectedDefect.label}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <span style={{
+                          display: "inline-block",
+                          padding: "5px 12px",
+                          background: "#0B6873",
+                          color: "white",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          borderRadius: 999
+                        }}>
+                          {(detectedDefect.confidence * 100).toFixed(0)}% Confidence
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Inside the IDENTIFIED DISPENSING DEFECT card */}
+                    {detectedDefect.possible_symptoms && detectedDefect.possible_symptoms.length > 0 && (
+                      <div style={{ marginTop: 12, borderTop: "1px solid rgba(11,104,115,0.15)", paddingTop: 12 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#102A43", marginBottom: 6 }}>
+                          Possible symptoms:
+                        </div>
+                        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: "#4B5563" }}>
+                          {detectedDefect.possible_symptoms.map((sym, idx) => (
+                            <li key={idx} style={{ marginBottom: 4 }}>{sym}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div style={{ fontSize: 16, color: "#000", marginBottom: 14 }}>
                   Possible Causes:
                 </div>
@@ -569,17 +866,54 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
               </div>
 
               <div style={card}>
-                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", color: "#102A43", marginBottom: 14 }}>TROUBLESHOOTING ACTION PLAN</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", color: "#102A43" }}>
+                    TROUBLESHOOTING ACTION PLAN
+                  </div>
+                  {actionPlan.length > 0 && (
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200">
+                      {actionPlan.filter(s => completedSteps[s.step]).length}/{actionPlan.length} completed
+                    </span>
+                  )}
+                </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {actionPlan.map((step) => {
-                    const st = statusStyle(step.status)
+                    const isDone = !!completedSteps[step.step]
                     return (
-                      <div key={step.step} style={{ background: "white", borderRadius: 14, padding: "12px 14px", border: "1px solid rgba(16,42,67,0.08)", borderLeft: `4px solid ${step.status === "In progress" ? "#D66A2C" : "#0B6873"}` }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                          <strong style={{ fontSize: 13, color: "#102A43" }}>Step {step.step}. {step.title}</strong>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: st.bg, color: st.color, whiteSpace: "nowrap" }}>{step.status}</span>
+                      <div
+                        key={step.step}
+                        onClick={() => toggleStepCompleted(step.step)}
+                        className={`cursor-pointer transition-all duration-200 p-3.5 rounded-xl border select-none ${isDone
+                            ? "bg-green-50 border-green-200 shadow-sm"
+                            : "bg-white border-gray-200 hover:border-teal-300 hover:shadow-sm"
+                          }`}
+                        style={{
+                          borderRadius: 14,
+                          borderLeft: isDone ? "4px solid #10B981" : "4px solid #0B6873",
+                        }}
+                      >
+                        <div className="flex justify-between items-center gap-2 mb-1.5">
+                          <strong
+                            className={`text-sm ${isDone ? "line-through text-gray-400" : "text-gray-900"
+                              }`}
+                          >
+                            Step {step.step}. {formatActionTitle(step.title)}
+                          </strong>
+                          <span
+                            className={`text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${isDone
+                                ? "bg-green-100 text-green-700"
+                                : "bg-gray-100 text-gray-600 hover:bg-teal-50 hover:text-teal-700"
+                              }`}
+                          >
+                            {isDone ? "✓ Completed" : "Mark as done"}
+                          </span>
                         </div>
-                        <p style={{ margin: 0, fontSize: 12, color: "rgba(22,32,42,0.65)", lineHeight: 1.5 }}>{step.detail}</p>
+                        <p
+                          className={`m-0 text-xs leading-relaxed transition-colors ${isDone ? "line-through text-gray-400" : "text-gray-600"
+                            }`}
+                        >
+                          {step.detail}
+                        </p>
                       </div>
                     )
                   })}
@@ -618,7 +952,7 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
                 </button>
               </div>
             </div>
-            
+
             {result?.session_id && causes.length > 0 && entryType === "upload" && (
               <div style={{ marginTop: 20 }}>
                 <ReportDownloadBar sessionId={result.session_id} />

@@ -29,6 +29,10 @@ YOLO_TO_DEFECT = {
     "inconsistent_volume": "inconsistent_size",
     "missing": "missing_dot",
     "air_bubble_irregular": "air_bubble",
+    "excess_volume": "too_much",
+    "insufficient_volume": "too_little",
+    "insufficient_paste": "too_little",
+    "missing_deposit": "missing_dot",
 }
 
 DISPLAY_DEFECT = {

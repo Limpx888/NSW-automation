@@ -99,68 +99,78 @@ def startup() -> None:
     load_model()
     try:
         global ml_pipeline
-        ml_pipeline = joblib.load("backend/weights/aoi_diagnostic_model.pkl")
+        import warnings
+        from sklearn.exceptions import InconsistentVersionWarning
+        import sklearn.compose._column_transformer
+        if not hasattr(sklearn.compose._column_transformer, "_RemainderColsList"):
+            class _RemainderColsList(list):
+                pass
+            sklearn.compose._column_transformer._RemainderColsList = _RemainderColsList
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
+            ml_pipeline = joblib.load("backend/weights/aoi_diagnostic_model.pkl")
     except Exception as e:
         print(f"Error loading ML model: {e}")
         ml_pipeline = None
 
-ACTION_DB = {
-    "Air Bubble": "Inspect syringe barrel for micro-bubbles and perform line purge.",
-    "Nozzle Blockage": "Inspect nozzle tip under microscope; clean or replace tip.",
-    "Material Viscosity Change": "Verify syringe temperature and check material pot-life.",
-    "Incorrect Parameter": "Verify pressure regulator, pulse timer, and standoff height.",
-    "Equipment Problem": "Perform Z-height sensor zeroing and substrate flatness check."
-}
-
 @app.post("/api/diagnose")
-async def run_ml_diagnostics(
-    yolo_defect: str = Form(...),
-    material: str = Form(...),
-    amount: str = Form(...),
-    frequency: str = Form(...),
-    recent_change: str = Form(...),
-    location: str = Form(...)
+async def run_diagnostics(
+    yolo_defect: str = Form("inconsistent_size"),
+    material: str = Form(""),
+    amount: str = Form(""),
+    frequency: str = Form(""),
+    recent_change: str = Form(""),
+    location: str = Form("")
 ):
-    if ml_pipeline is None:
-        raise HTTPException(500, "ML model not loaded.")
-        
-    input_df = pd.DataFrame([{
-        "yolo_defect": yolo_defect,
-        "material": material,
+    # 1. Calculate Dynamic Confidence based on known answers
+    known_count = sum(1 for v in [material, amount, frequency, recent_change, location] if v and "unknown" not in v.lower())
+    dynamic_confidence = round(0.65 + (known_count * 0.05), 2)  # Scales from 65% up to 90%
+
+    wf = PostInspectionWorkflow(defect_class=yolo_defect, confidence=dynamic_confidence)
+
+    answers = {
         "amount": amount,
         "frequency": frequency,
         "recent_change": recent_change,
-        "location": location
-    }])
+        "location": location,
+        "material": material
+    }
+    result = wf.run(answers)
 
-    probabilities = ml_pipeline.predict_proba(input_df)[0]
-    classes = ml_pipeline.named_steps["classifier"].classes_
-
-    cause_scores = []
-    for cause_name, prob in zip(classes, probabilities):
-        score_pct = int(round(prob * 100))
-        cause_scores.append({
-            "cause": cause_name,
-            "score": f"{score_pct}%",
-            "score_num": score_pct,
-            "reasoning": f"ML model calculated {score_pct}% confidence based on operational inputs."
-        })
-
-    sorted_causes = sorted(cause_scores, key=lambda x: x["score_num"], reverse=True)[:3]
-
-    action_plan = []
-    statuses = ["In progress", "Pending", "Pending"]
-    for idx, (cause_item, status) in enumerate(zip(sorted_causes, statuses), start=1):
-        action_plan.append({
-            "step": idx,
-            "cause": cause_item["cause"],
-            "action": ACTION_DB.get(cause_item["cause"], "Perform general visual inspection."),
-            "status": status
-        })
+    # 2. Map the Defect to Possible Symptoms
+    symptoms_map = {
+        "missing_deposit": ["No solder paste on pad", "Broken lines or skipped shots"],
+        "missing_dot": ["No solder paste on pad", "Broken lines or skipped shots"],
+        "excess_volume": ["Paste spreading beyond pad", "Bridges between pads", "Slumping"],
+        "too_much": ["Paste spreading beyond pad", "Bridges between pads", "Slumping"],
+        "insufficient_volume": ["Starved joints", "Incomplete pad coverage"],
+        "too_little": ["Starved joints", "Incomplete pad coverage"],
+        "inconsistent_size": ["Some dispensing dots are larger", "Some dispensing dots are smaller", "Dispensing results are not repeatable"]
+    }
+    symptoms = symptoms_map.get(result.defect_class) or symptoms_map.get(yolo_defect) or symptoms_map["inconsistent_size"]
 
     return {
-        "cause_table": sorted_causes,
-        "action_plan": action_plan
+        "defect_class": result.defect_class,
+        "defect_label": result.defect_label,
+        "confidence": result.confidence,
+        "possible_symptoms": symptoms,  # New field!
+        "cause_table": [
+            {
+                "cause": c.cause_id,
+                "name": c.name,
+                "score": f"{int(c.likelihood_pct)}%",
+                "score_num": int(c.likelihood_pct),
+                "reasoning": c.reasoning 
+            } for c in result.causes[:3]  # Return top 3
+        ],
+        "action_plan": [
+            {
+                "step": a.step,
+                "cause": a.related_cause,
+                "action": a.detail,
+                "status": a.status
+            } for a in result.action_plan
+        ]
     }
 
 
@@ -433,3 +443,95 @@ def preview_report(session_id: str) -> HTMLResponse:
     except LookupError:
         raise HTTPException(404, "Session not found") from None
     return HTMLResponse(content=render_report_html(data))
+
+
+class TextDescription(BaseModel):
+    text: str
+
+
+@app.post("/api/extract_symptoms")
+def extract_symptoms(payload: TextDescription):
+    """Extracts structured variables from a user's free-text defect description."""
+    import json
+    import re
+    import google.generativeai as genai
+
+    api_key = get_settings().gemini_api_key
+
+    def fallback_extraction(text: str) -> dict[str, str]:
+        text_lower = text.lower()
+
+        amt = "unknown"
+        if re.search(r'\b(too small|insufficient|starved|thin|little|low volume|under-deposit)\b', text_lower):
+            amt = "too_small"
+        elif re.search(r'\b(too large|excess|slump|spreading|overflow|too much|high volume)\b', text_lower):
+            amt = "too_large"
+        elif re.search(r'\b(inconsistent|fluctuat|irregular|stringing)\b', text_lower):
+            amt = "inconsistent"
+        elif re.search(r'\b(missing|skipped|no deposit|zero)\b', text_lower):
+            amt = "missing"
+
+        freq = "unknown"
+        # Check occasional and negation phrases first so 'doesn't happen on every board' isn't misclassified by 'every board'
+        if re.search(r'\b(not every|doesn\'t happen on every|does not happen on every|occasionally|occasional|intermittent|random|sometimes|sporadic)\b', text_lower):
+            freq = "occasional"
+        elif re.search(r'\b(continuous|continuously|every single board|every board|all the time|always|every target|every dot)\b', text_lower):
+            freq = "continuous"
+
+        loc = "unknown"
+        # Check multiple FIRST so phrases like 'every single board' don't trigger 'single'
+        if re.search(r'\b(all locations|across all|all dispensing|everywhere|entire board|entire array|multiple|scattered|random spots|different spots)\b', text_lower):
+            loc = "multiple"
+        elif re.search(r'\b(single location|single specific|single pad|single pin|one specific|one pad|one pin|isolated)\b', text_lower):
+            loc = "single"
+
+        rec = "unknown"
+        if re.search(r'\b(nozzle|micro-nozzle|tip|needle|orifice)\b', text_lower):
+            rec = "nozzle"
+        elif re.search(r'\b(syringe|barrel|batch|cartridge|new paste|new material)\b', text_lower):
+            rec = "syringe"
+        elif re.search(r'\b(pressure|timer|standoff|parameter|recipe|speed)\b', text_lower):
+            rec = "parameters"
+        elif re.search(r'\b(no change|baseline|unchanged|same setup)\b', text_lower):
+            rec = "none"
+
+        return {"amount": amt, "frequency": freq, "location": loc, "recent_change": rec}
+
+    # Only attempt cloud Gemini call if an official Google AI Studio key (starts with AIza) is present
+    if not api_key or not api_key.startswith("AIza"):
+        return fallback_extraction(payload.text)
+
+    try:
+        genai.configure(api_key=api_key)
+        prompt = f"""
+        Analyze this manufacturing defect description: "{payload.text}"
+        Extract the symptoms and output ONLY a JSON object with these exact keys and allowed values:
+        - amount: "too_small", "too_large", "inconsistent", "missing", "spreading", "irregular", "stringing", or "unknown"
+        - frequency: "continuous", "occasional", or "unknown"
+        - location: "single", "multiple", or "unknown"
+        - recent_change: "nozzle", "syringe", "parameters", "none", or "unknown"
+
+        Strict Extraction Rules:
+        1. For the 'location' field, carefully distinguish between the number of boards and the number of dispensing locations on the board.
+        2. If the user mentions "all locations", "across all dispensing locations", "everywhere", "entire board", "multiple locations", or "random spots", you MUST output "multiple", even if the word "single" appears elsewhere in the text.
+        3. Only output "single" if the defect is explicitly confined to one specific pad, pin, or single location on the PCB.
+        4. For 'recent_change', always extract any hardware replacement, cleanings, or maintenance (e.g., "micro-nozzle", "new nozzle", "tip replaced" MUST map to "nozzle"). Map new syringe barrels or material batches to "syringe", and pressure/timing/standoff changes to "parameters".
+        """
+
+        model = genai.GenerativeModel(
+            model_name=get_settings().gemini_model,
+            generation_config={"response_mime_type": "application/json"}
+        )
+
+        # Enforce 3.5s timeout so cloud LLM never blocks or freezes UI
+        response = model.generate_content(prompt, request_options={"timeout": 3.5})
+        parsed = json.loads(response.text)
+        return {
+            "amount": parsed.get("amount", "unknown"),
+            "frequency": parsed.get("frequency", "unknown"),
+            "location": parsed.get("location", "unknown"),
+            "recent_change": parsed.get("recent_change", "unknown")
+        }
+    except Exception as exc:
+        print(f"Gemini symptom extraction failed or timed out: {exc}, using fallback heuristic.")
+        return fallback_extraction(payload.text)

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     yolo_conf: float = 0.25
     yolo_iou: float = 0.45
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.6-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
     cors_origins: str = "http://localhost:8443,http://127.0.0.1:8443"
 
     @property

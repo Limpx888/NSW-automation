@@ -45,6 +45,7 @@ export type AnalyzeResponse = {
   defect_label: string
   defect_class?: string
   confidence?: number
+  possible_symptoms?: string[]
   overall_quality_score: number
   shape_consistency: number
   size_consistency: number
@@ -64,6 +65,7 @@ export type DiagnoseResponse = {
   defect_class: string
   defect_label: string
   confidence: number
+  possible_symptoms?: string[]
   answers: Record<string, string>
   causes: CauseRow[]
   action_plan: ActionStep[]
