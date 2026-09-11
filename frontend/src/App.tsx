@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import type { User } from '@supabase/supabase-js'
 import SolderPasteScan from './SolderPasteScan'
 import { HistoryView, ReportsView } from './CaseWorkspace'
+import AuthModal from './AuthModal'
+import { supabase, syncUserProfile, isEmailRegistered, type UserProfile } from './lib/supabase'
 
 // ─── Global scroll state ───────────────────────────────────────────────────────
 function useScrollY() {
@@ -91,13 +94,30 @@ function Nav({
   view,
   onNavigate,
   forceSolid = false,
+  user,
+  profile,
+  onOpenAuth,
+  onSignOut,
 }: {
   view: AppView
   onNavigate: (view: AppView) => void
   forceSolid?: boolean
+  user: User | null
+  profile: UserProfile | null
+  onOpenAuth: (reason?: string) => void
+  onSignOut: () => void
 }) {
   const scrollY = useScrollY()
   const scrolled = forceSolid || scrollY > 40 || view !== 'home'
+
+  const displayName =
+    profile?.full_name ||
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.name ||
+    user?.email?.split('@')[0] ||
+    'User'
+
+  const initial = displayName.charAt(0).toUpperCase()
 
   return (
     <nav
@@ -157,16 +177,128 @@ function Nav({
         })}
       </div>
 
-      <button
-        type="button"
-        onClick={() => onNavigate('scan')}
-        style={{ background: '#D66A2C', color: 'white', border: 'none', borderRadius: 999, padding: '9px 22px', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'background 0.2s, transform 0.2s' }}
-        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#B85320'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
-        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#D66A2C'; (e.currentTarget as HTMLButtonElement).style.transform = '' }}
-      >Get Started</button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {user ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              title={user.email || ''}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: scrolled ? 'rgba(11, 104, 115, 0.08)' : 'rgba(255, 255, 255, 0.15)',
+                padding: '5px 12px 5px 6px',
+                borderRadius: 999,
+                border: `1px solid ${scrolled ? 'rgba(11,104,115,0.2)' : 'rgba(255,255,255,0.25)'}`,
+              }}
+            >
+              <div
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  background: '#0B6873',
+                  color: 'white',
+                  fontWeight: 700,
+                  fontSize: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {initial}
+              </div>
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: scrolled ? '#1F2033' : 'white',
+                  maxWidth: 120,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {displayName}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={onSignOut}
+              style={{
+                background: 'transparent',
+                color: scrolled ? '#64748B' : 'rgba(255,255,255,0.8)',
+                border: `1px solid ${scrolled ? '#CBD5E1' : 'rgba(255,255,255,0.3)'}`,
+                borderRadius: 999,
+                padding: '6px 14px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = '#EF4444'
+                e.currentTarget.style.borderColor = '#FCA5A5'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = scrolled ? '#64748B' : 'rgba(255,255,255,0.8)'
+                e.currentTarget.style.borderColor = scrolled ? '#CBD5E1' : 'rgba(255,255,255,0.3)'
+              }}
+            >
+              Sign Out
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => onOpenAuth('Sign in or register to access all features')}
+              style={{
+                background: 'transparent',
+                color: scrolled ? '#0B6873' : 'white',
+                border: `1px solid ${scrolled ? '#0B6873' : 'rgba(255,255,255,0.4)'}`,
+                borderRadius: 999,
+                padding: '8px 18px',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('scan')}
+              style={{
+                background: '#D66A2C',
+                color: 'white',
+                border: 'none',
+                borderRadius: 999,
+                padding: '9px 22px',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.2s, transform 0.2s',
+              }}
+              onMouseEnter={e => {
+                ;(e.currentTarget as HTMLButtonElement).style.background = '#B85320'
+                ;(e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'
+              }}
+              onMouseLeave={e => {
+                ;(e.currentTarget as HTMLButtonElement).style.background = '#D66A2C'
+                ;(e.currentTarget as HTMLButtonElement).style.transform = ''
+              }}
+            >
+              Get Started
+            </button>
+          </div>
+        )}
+      </div>
     </nav>
   )
 }
+
 
 // ─── Hero — cinematic parallax hero for PCB solder-paste inspection ──────────
 function Hero({ onStartScan }: { onStartScan: () => void }) {
@@ -656,15 +788,130 @@ function Footer() {
 // ─── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView] = useState<AppView>('home')
+  const [user, setUser] = useState<User | null>(null)
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [isRegistered, setIsRegistered] = useState(false)
+  const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [authReason, setAuthReason] = useState('')
+  const [pendingView, setPendingView] = useState<AppView | null>(null)
+
+  useEffect(() => {
+    const handleAuthUser = async (u: User | null) => {
+      if (!u) {
+        setUser(null)
+        setProfile(null)
+        setIsRegistered(false)
+        return
+      }
+
+      const userEmail = u.email || ''
+      const registered = await isEmailRegistered(userEmail)
+
+      if (registered) {
+        setUser(u)
+        setIsRegistered(true)
+        const p = await syncUserProfile(u)
+        setProfile(p)
+        setAuthModalOpen(false)
+      } else {
+        // User logged in via OAuth or Auth but email is NOT in public.registrations
+        setUser(u)
+        setIsRegistered(false)
+        setAuthReason(`Registration required for ${userEmail}. Please complete your name & company registration below.`)
+        setAuthModalOpen(true)
+      }
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleAuthUser(session?.user || null)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      handleAuthUser(session?.user || null)
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  const handleOpenAuth = (reason?: string) => {
+    setAuthReason(reason || 'Sign in or register to access DARA features')
+    setAuthModalOpen(true)
+  }
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+    setProfile(null)
+    setIsRegistered(false)
+    setView('home')
+  }
 
   const navigate = (next: AppView) => {
+    if (next === 'home') {
+      setView('home')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    if (!user || !isRegistered) {
+      const featureNames: Record<AppView, string> = {
+        home: 'Dashboard',
+        scan: 'Upload / Describe feature',
+        reports: 'Reports feature',
+        history: 'History feature',
+      }
+      setAuthReason(
+        !user
+          ? `Sign in or register to access ${featureNames[next]}`
+          : `Please complete your registration first to access ${featureNames[next]}`
+      )
+      setPendingView(next)
+      setAuthModalOpen(true)
+      return
+    }
+
     setView(next)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  const handleAuthSuccess = async () => {
+    if (user) {
+      const registered = await isEmailRegistered(user.email || '')
+      setIsRegistered(registered)
+      if (registered) {
+        const p = await syncUserProfile(user)
+        setProfile(p)
+      }
+    }
+    if (pendingView) {
+      setView(pendingView)
+      setPendingView(null)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
   return (
     <div style={{ fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
-      <Nav view={view} onNavigate={navigate} forceSolid={view !== 'home'} />
+      <Nav
+        view={view}
+        onNavigate={navigate}
+        forceSolid={view !== 'home'}
+        user={user}
+        profile={profile}
+        onOpenAuth={handleOpenAuth}
+        onSignOut={handleSignOut}
+      />
+
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        reason={authReason}
+        initialEmail={user?.email || ''}
+        initialMode={user && !isRegistered ? 'register' : undefined}
+        onSuccess={handleAuthSuccess}
+      />
 
       {view === 'home' && (
         <>
@@ -749,3 +996,4 @@ export default function App() {
     </div>
   )
 }
+
