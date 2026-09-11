@@ -13,6 +13,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
     "chart.js": "^4.5.1",
+    "lucide-react": "^1.45.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.18.3"

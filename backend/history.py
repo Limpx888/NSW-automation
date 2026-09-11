@@ -91,6 +91,7 @@ def _row_to_summary(row: sqlite3.Row) -> dict[str, Any]:
         "quality_score": row["quality_score"],
         "top_cause": (top or {}).get("name") if isinstance(top, dict) else None,
         "top_cause_pct": (top or {}).get("likelihood_pct") if isinstance(top, dict) else None,
+        "annotated_image_base64": row["annotated_image_base64"] if "annotated_image_base64" in cols else None,
         "status": row["status"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -252,7 +253,7 @@ def list_cases(
         SELECT session_id, user_email, filename, defect_class, defect_label, confidence,
                detection_count, quality_score, shape_consistency, size_consistency,
                dispensing_position, defect_risk, answers_json, causes_json,
-               action_plan_json, status, created_at, updated_at
+               action_plan_json, annotated_image_base64, status, created_at, updated_at
         FROM scan_cases
         WHERE user_email = ?
         ORDER BY created_at DESC

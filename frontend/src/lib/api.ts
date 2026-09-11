@@ -90,6 +90,7 @@ export type HistoryCaseSummary = {
   quality_score?: number | null
   top_cause?: string | null
   top_cause_pct?: number | null
+  annotated_image_base64?: string | null
   status: string
   created_at: string
   updated_at: string
