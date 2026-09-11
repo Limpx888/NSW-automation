@@ -16,6 +16,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS scan_cases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL UNIQUE,
+    user_email TEXT,
     filename TEXT,
     defect_class TEXT,
     defect_label TEXT,
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS scan_cases (
 );
 CREATE INDEX IF NOT EXISTS idx_scan_cases_created ON scan_cases(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_scan_cases_defect ON scan_cases(defect_class);
+CREATE INDEX IF NOT EXISTS idx_scan_cases_user ON scan_cases(user_email);
 """
 
 
@@ -46,6 +48,12 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    
+    # Auto-migrate user_email column if missing in pre-existing DB
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(scan_cases)").fetchall()]
+    if "user_email" not in cols:
+        conn.execute("ALTER TABLE scan_cases ADD COLUMN user_email TEXT")
+        conn.commit()
     return conn
 
 
@@ -68,15 +76,16 @@ def create_case(payload: dict[str, Any], db_path: Path | None = None) -> str:
     conn.execute(
         """
         INSERT INTO scan_cases (
-            session_id, filename, defect_class, defect_label, confidence,
+            session_id, user_email, filename, defect_class, defect_label, confidence,
             detection_count, quality_score, shape_consistency, size_consistency,
             dispensing_position, defect_risk, answers_json, causes_json,
             action_plan_json, detections_json, annotated_image_base64,
             status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             session_id,
+            payload.get("user_email"),
             payload.get("filename"),
             payload.get("defect_class") or vision.get("defect_class"),
             payload.get("defect_label") or vision.get("defect_label"),
@@ -123,6 +132,7 @@ def update_case(session_id: str, payload: dict[str, Any], db_path: Path | None =
     values: list[Any] = []
 
     mapping = {
+        "user_email": payload.get("user_email"),
         "defect_class": payload.get("defect_class"),
         "defect_label": payload.get("defect_label"),
         "confidence": payload.get("confidence"),
@@ -180,20 +190,40 @@ def upsert_diagnosed_case(payload: dict[str, Any], db_path: Path | None = None) 
     return create_case({**payload, "status": "diagnosed"}, db_path=db_path)
 
 
-def list_cases(limit: int = 50, db_path: Path | None = None) -> list[dict[str, Any]]:
+def list_cases(
+    limit: int = 50,
+    user_email: str | None = None,
+    db_path: Path | None = None,
+) -> list[dict[str, Any]]:
     conn = connect(db_path)
-    rows = conn.execute(
-        """
-        SELECT session_id, filename, defect_class, defect_label, confidence,
-               detection_count, quality_score, shape_consistency, size_consistency,
-               dispensing_position, defect_risk, answers_json, causes_json,
-               action_plan_json, status, created_at, updated_at
-        FROM scan_cases
-        ORDER BY created_at DESC
-        LIMIT ?
-        """,
-        (int(limit),),
-    ).fetchall()
+    if user_email and user_email.strip():
+        rows = conn.execute(
+            """
+            SELECT session_id, user_email, filename, defect_class, defect_label, confidence,
+                   detection_count, quality_score, shape_consistency, size_consistency,
+                   dispensing_position, defect_risk, answers_json, causes_json,
+                   action_plan_json, status, created_at, updated_at
+            FROM scan_cases
+            WHERE user_email = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (user_email.strip(), int(limit)),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT session_id, user_email, filename, defect_class, defect_label, confidence,
+                   detection_count, quality_score, shape_consistency, size_consistency,
+                   dispensing_position, defect_risk, answers_json, causes_json,
+                   action_plan_json, status, created_at, updated_at
+            FROM scan_cases
+            WHERE user_email IS NULL OR user_email = ''
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
     conn.close()
     return [_row_to_summary(r) for r in rows]
 
@@ -210,9 +240,17 @@ def get_case(session_id: str, db_path: Path | None = None) -> dict[str, Any] | N
     return _row_to_detail(row)
 
 
-def count_cases(db_path: Path | None = None) -> int:
+def count_cases(user_email: str | None = None, db_path: Path | None = None) -> int:
     conn = connect(db_path)
-    row = conn.execute("SELECT COUNT(*) AS n FROM scan_cases").fetchone()
+    if user_email and user_email.strip():
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM scan_cases WHERE user_email = ?",
+            (user_email.strip(),),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM scan_cases WHERE user_email IS NULL OR user_email = ''"
+        ).fetchone()
     conn.close()
     return int(row["n"] if row else 0)
 
@@ -270,6 +308,7 @@ def _row_to_summary(row: sqlite3.Row) -> dict[str, Any]:
     top = causes[0] if isinstance(causes, list) and causes else None
     return {
         "session_id": row["session_id"],
+        "user_email": row["user_email"] if "user_email" in row.keys() else None,
         "filename": row["filename"],
         "defect_class": row["defect_class"],
         "defect_label": row["defect_label"],

@@ -179,7 +179,7 @@ const card: CSSProperties = {
   boxShadow: "0 16px 40px rgba(16,42,67,0.06)",
 }
 
-export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
+export default function SolderPasteScan({ onBack, userEmail }: { onBack: () => void; userEmail?: string }) {
   type FlowStep = "select" | "describe" | "upload" | "quiz" | "results"
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -278,7 +278,7 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
     setError("")
     resetDownstream()
     try {
-      const data = await analyzeImage(file)
+      const data = await analyzeImage(file, userEmail)
       setResult(data)
       if (data.defect_label) {
         setDetectedDefect({
@@ -331,6 +331,9 @@ export default function SolderPasteScan({ onBack }: { onBack: () => void }) {
       formData.append("frequency", freqVal) // <-- Using the formatted value
       formData.append("recent_change", answers["recent_change"] || "")
       formData.append("location", answers["location_large_branch"] || "")
+      if (userEmail) {
+        formData.append("user_email", userEmail)
+      }
 
       // ADD THIS LINE: Pass the existing session_id if it is an image upload
       if (analysisResult?.session_id) {

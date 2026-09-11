@@ -62,6 +62,7 @@ class DiagnoseRequest(BaseModel):
     answers: dict[str, str] = Field(default_factory=dict)
     analysis: dict[str, Any] | None = None
     session_id: str | None = None
+    user_email: str | None = None
 
 
 class FusionDiagnoseRequest(BaseModel):
@@ -121,7 +122,8 @@ async def run_diagnostics(
     frequency: str = Form(""),
     recent_change: str = Form(""),
     location: str = Form(""),
-    session_id: str = Form(None)
+    session_id: str = Form(None),
+    user_email: str = Form(None)
 ):
     # 1. Calculate Dynamic Confidence based on known answers
     known_count = sum(1 for v in [material, amount, frequency, recent_change, location] if v and "unknown" not in v.lower())
@@ -281,6 +283,7 @@ async def run_diagnostics(
 
     # 2. Build the core database payload
     payload = {
+        "user_email": user_email,
         "defect_class": result.defect_class,
         "defect_label": result.defect_label,
         "confidence": result.confidence,
@@ -368,7 +371,10 @@ def meta() -> dict[str, Any]:
 
 
 @app.post("/analyze")
-async def analyze(file: UploadFile = File(...)) -> dict[str, Any]:
+async def analyze(
+    file: UploadFile = File(...),
+    user_email: str | None = Form(None),
+) -> dict[str, Any]:
     """Upload a defect image → YOLO boxes/masks + quality assessment + follow-up prompts."""
     data = await file.read()
     if not data:
@@ -392,6 +398,7 @@ async def analyze(file: UploadFile = File(...)) -> dict[str, Any]:
         detection_count=int(vision.get("detection_count") or 0),
     )
     payload = {
+        "user_email": user_email,
         "filename": file.filename,
         "vision": vision,
         "quality": quality,
@@ -452,6 +459,7 @@ def workflow_diagnose(payload: DiagnoseRequest) -> dict[str, Any]:
     session_id = history.upsert_diagnosed_case(
         {
             "session_id": session_id,
+            "user_email": payload.user_email or analysis.get("user_email"),
             "filename": analysis.get("filename"),
             "defect_class": out["defect_class"],
             "defect_label": out["defect_label"],
@@ -559,9 +567,9 @@ def qa(payload: QaRequest) -> dict[str, Any]:
 
 
 @app.get("/history")
-def list_history(limit: int = 50) -> dict[str, Any]:
-    cases = history.list_cases(limit=max(1, min(limit, 200)))
-    return {"cases": cases, "count": len(cases), "total": history.count_cases()}
+def list_history(limit: int = 50, user_email: str | None = None) -> dict[str, Any]:
+    cases = history.list_cases(limit=max(1, min(limit, 200)), user_email=user_email)
+    return {"cases": cases, "count": len(cases), "total": history.count_cases(user_email=user_email)}
 
 
 @app.get("/cases/{session_id}")
