@@ -282,12 +282,12 @@ function Nav({
                 transition: 'background 0.2s, transform 0.2s',
               }}
               onMouseEnter={e => {
-                ;(e.currentTarget as HTMLButtonElement).style.background = '#B85320'
-                ;(e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'
+                ; (e.currentTarget as HTMLButtonElement).style.background = '#B85320'
+                  ; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'
               }}
               onMouseLeave={e => {
-                ;(e.currentTarget as HTMLButtonElement).style.background = '#D66A2C'
-                ;(e.currentTarget as HTMLButtonElement).style.transform = ''
+                ; (e.currentTarget as HTMLButtonElement).style.background = '#D66A2C'
+                  ; (e.currentTarget as HTMLButtonElement).style.transform = ''
               }}
             >
               Get Started
@@ -787,7 +787,20 @@ function Footer() {
 
 // ─── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [view, setView] = useState<AppView>('home')
+  // 1. Initialize view based on URL parameters (e.g., ?case_id=... should open 'reports')
+  const [view, setView] = useState<AppView>(() => {
+    if (window.location.search.includes('case_id') || window.location.pathname.includes('reports')) {
+      return 'reports'
+    }
+    return 'home'
+  })
+
+  // Track target report ID to pass into ReportsView when coming from scan
+  const [targetReportId, setTargetReportId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('case_id')
+  })
+
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [isRegistered, setIsRegistered] = useState(false)
@@ -814,7 +827,6 @@ export default function App() {
         setProfile(p)
         setAuthModalOpen(false)
       } else {
-        // User logged in via OAuth or Auth but email is NOT in public.registrations
         setUser(u)
         setIsRegistered(false)
         setAuthReason(`Registration required for ${userEmail}. Please complete your name & company registration below.`)
@@ -845,12 +857,15 @@ export default function App() {
     setUser(null)
     setProfile(null)
     setIsRegistered(false)
+    setTargetReportId(null)
     setView('home')
   }
 
   const navigate = (next: AppView) => {
     if (next === 'home') {
       setView('home')
+      setTargetReportId(null)
+      window.history.replaceState({}, '', window.location.pathname) // Clear query params on home
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
@@ -870,6 +885,10 @@ export default function App() {
       setPendingView(next)
       setAuthModalOpen(true)
       return
+    }
+
+    if (next !== 'reports') {
+      setTargetReportId(null)
     }
 
     setView(next)
@@ -988,12 +1007,27 @@ export default function App() {
         </>
       )}
 
-      {view === 'scan' && <SolderPasteScan onBack={() => navigate('home')} userEmail={user?.email} />}
+      {view === 'scan' && (
+        <SolderPasteScan
+          onBack={() => navigate('home')}
+          userEmail={user?.email}
+          onViewReport={(sessionId) => {
+            setTargetReportId(sessionId)
+            window.history.pushState({}, '', `/reports?case_id=${sessionId}`)
+            setView('reports')
+          }}
+        />
+      )}
 
-      {view === 'reports' && <ReportsView onBack={() => navigate('home')} userEmail={user?.email} />}
+      {view === 'reports' && (
+        <ReportsView
+          onBack={() => navigate('home')}
+          userEmail={user?.email}
+          initialCaseId={targetReportId}
+        />
+      )}
 
       {view === 'history' && <HistoryView onBack={() => navigate('home')} userEmail={user?.email} />}
     </div>
   )
 }
-

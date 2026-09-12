@@ -508,7 +508,15 @@ export function HistoryView({ onBack, userEmail }: { onBack: () => void; userEma
 // ============================================================================
 // 2. REPORTS VIEW: Dedicated to Monthly Case Cards & Diagnostic Inspection (Image 2)
 // ============================================================================
-export function ReportsView({ onBack, userEmail }: { onBack: () => void; userEmail?: string }) {
+export function ReportsView({
+  onBack,
+  userEmail,
+  initialCaseId
+}: {
+  onBack: () => void;
+  userEmail?: string;
+  initialCaseId?: string | null
+}) {
   const [cases, setCases] = useState<HistoryCaseSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -538,6 +546,39 @@ export function ReportsView({ onBack, userEmail }: { onBack: () => void; userEma
   useEffect(() => {
     void load()
   }, [userEmail])
+
+  // Automatically open report when initialCaseId or URL search changes
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const targetCaseId = initialCaseId || params.get("case_id")
+
+    if (!targetCaseId) return
+
+    const openTarget = async () => {
+      const found = cases.find((c) => c.session_id === targetCaseId)
+      if (found) {
+        await openFullReport(found.session_id)
+      } else if (!loading) {
+        // Fallback: fetch directly if not found in current list
+        setDetailLoading(true)
+        try {
+          const [caseData, reportData] = await Promise.all([
+            fetchCase(targetCaseId),
+            fetchReportData(targetCaseId).catch(() => null),
+          ])
+          setSelectedCase(caseData)
+          setReport(reportData)
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to load report")
+        } finally {
+          setDetailLoading(false)
+        }
+      }
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+
+    void openTarget()
+  }, [cases, loading, initialCaseId])
 
   // Filter cases strictly to the selected month & year
   const filteredCases = cases.filter((c) => {

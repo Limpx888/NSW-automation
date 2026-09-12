@@ -179,7 +179,7 @@ const card: CSSProperties = {
   boxShadow: "0 16px 40px rgba(16,42,67,0.06)",
 }
 
-export default function SolderPasteScan({ onBack, userEmail }: { onBack: () => void; userEmail?: string }) {
+export default function SolderPasteScan({ onBack, userEmail, onViewReport }: { onBack: () => void; userEmail?: string; onViewReport?: (sessionId: string) => void }) {
   type FlowStep = "select" | "describe" | "upload" | "quiz" | "results"
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -350,13 +350,14 @@ export default function SolderPasteScan({ onBack, userEmail }: { onBack: () => v
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
 
-      // Save the generated session_id into the frontend state
+      // Save the generated session_id and details into the frontend state
       setResult((prev) => ({
         ...(prev || {}),
         session_id: data.session_id,
         defect_label: data.defect_label,
         defect_class: data.defect_class,
         confidence: data.confidence,
+        overall_quality_score: data.overall_quality_score ?? prev?.overall_quality_score ?? 75,
       } as AnalyzeResponse))
 
       // Pull defect_label and confidence from API response (Step 2 requirement)
@@ -723,26 +724,55 @@ export default function SolderPasteScan({ onBack, userEmail }: { onBack: () => v
           </button>
 
           {flowStep === 'results' && (
-            <button
-              type="button"
-              onClick={startNewScan}
-              style={{
-                background: "white",
-                color: "#0B6873",
-                border: "1px solid rgba(11,104,115,0.3)",
-                borderRadius: 999,
-                padding: "8px 18px",
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: "pointer",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-                display: "flex",
-                alignItems: "center",
-                gap: 6
-              }}
-            >
-              <span>↺</span> Start New Scan
-            </button>
+            <div style={{ display: "flex", gap: 12 }}>
+              {result?.session_id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onViewReport) {
+                      onViewReport(result.session_id!)
+                    }
+                  }}
+                  style={{
+                    background: "#0B6873",
+                    color: "white",
+                    border: "none",
+                    borderRadius: 999,
+                    padding: "8px 18px",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    boxShadow: "0 2px 8px rgba(11,104,115,0.2)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  <span>📄</span> View Report
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={startNewScan}
+                style={{
+                  background: "white",
+                  color: "#0B6873",
+                  border: "1px solid rgba(11,104,115,0.3)",
+                  borderRadius: 999,
+                  padding: "8px 18px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6
+                }}
+              >
+                <span>↺</span> Start New Scan
+              </button>
+            </div>
           )}
         </div>
 
@@ -1026,7 +1056,7 @@ export default function SolderPasteScan({ onBack, userEmail }: { onBack: () => v
               </div>
             </div>
 
-            {result?.session_id && causes.length > 0 && entryType === "upload" && (
+            {result?.session_id && causes.length > 0 && (
               <div style={{ marginTop: 20 }}>
                 <ReportDownloadBar sessionId={result.session_id} />
               </div>
