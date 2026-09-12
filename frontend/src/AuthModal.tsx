@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { supabase, saveRegistration, syncUserProfile, checkEmailExists } from './lib/supabase'
+import logoImg from './assets/logo.png'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -266,24 +267,18 @@ export default function AuthModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <div
               style={{
-                width: 28,
-                height: 28,
+                width: 30,
+                height: 30,
                 borderRadius: 8,
-                background: '#D66A2C',
+                overflow: 'hidden',
+                background: 'white',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                padding: 2,
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path
-                  d="M3 12L6 6L9 9L12 4"
-                  stroke="white"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <img src={logoImg} alt="DARA Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
             <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: '-0.02em' }}>DARA AI</span>
           </div>

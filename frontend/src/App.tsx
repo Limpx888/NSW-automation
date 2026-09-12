@@ -5,6 +5,8 @@ import { HistoryView, ReportsView } from './CaseWorkspace'
 import LearningDatabase from './LearningDatabase'
 import AuthModal from './AuthModal'
 import { supabase, syncUserProfile, isEmailRegistered, type UserProfile } from './lib/supabase'
+import logoImg from './assets/logo.png'
+import heroVideo from './assets/hero-video.mp4'
 
 // ─── Global scroll state ───────────────────────────────────────────────────────
 function useScrollY() {
@@ -136,15 +138,20 @@ function Nav({
       <button
         type="button"
         onClick={() => onNavigate('home')}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          background: 'none',
+          border: 'none',
+          cursor: scrolled ? 'pointer' : 'default',
+          padding: 0,
+          opacity: scrolled ? 1 : 0,
+          pointerEvents: scrolled ? 'auto' : 'none',
+          transition: 'opacity 0.3s ease',
+        }}
       >
-        <div style={{ width: 32, height: 32, borderRadius: 8, background: '#0B6873', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M3 12L6 6L9 9L12 4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            <circle cx="12" cy="4" r="1.5" fill="white" />
-          </svg>
-        </div>
-        <span style={{ fontWeight: 800, fontSize: 17, color: scrolled ? '#1F2033' : 'white', letterSpacing: '-0.03em', transition: 'color 0.3s' }}>DARA</span>
+        <span style={{ fontWeight: 800, fontSize: 17, color: '#1F2033', letterSpacing: '-0.03em' }}>DARA</span>
       </button>
 
       <div style={{ display: 'flex', gap: 32 }}>
@@ -305,7 +312,6 @@ function Nav({
 // ─── Hero — cinematic parallax hero for PCB solder-paste inspection ──────────
 function Hero({ onStartScan }: { onStartScan: () => void }) {
   const { ref, bgOffset } = useParallaxBg(0.45)
-  const { ref: cardRef, fgOffset } = useParallaxFg(-0.12)
   const scrollY = useScrollY()
   // Fade hero text as user scrolls
   const heroOpacity = Math.max(0, 1 - scrollY / 500)
@@ -317,84 +323,147 @@ function Hero({ onStartScan }: { onStartScan: () => void }) {
       style={{
         position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-        background: '#102A43',
+        background: '#0B192C',
+        padding: '120px 24px 80px',
       }}
     >
-      {/* Background photo layer — moves slower than scroll */}
+      {/* Background Video Layer — Autoplay & Loop */}
       <div style={{
-        position: 'absolute', inset: '-20%',
-        transform: `translateY(${bgOffset}px)`,
+        position: 'absolute', inset: '-10%',
+        transform: `translateY(${bgOffset * 0.4}px)`,
         willChange: 'transform',
+        overflow: 'hidden',
       }}>
-        <img
-          src="https://images.unsplash.com/photo-1518770660439-4636190af475?w=1800&h=1200&fit=crop&auto=format"
-          alt="Printed circuit board for solder-paste inspection"
-          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }}
+        <video
+          src={heroVideo}
+          autoPlay
+          loop
+          muted
+          playsInline
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center',
+            filter: 'brightness(0.72) contrast(1.1)',
+          }}
         />
-        {/* Navy and teal overlay for technical text legibility */}
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(160deg, rgba(16,42,67,0.88) 0%, rgba(11,104,115,0.58) 60%, rgba(16,42,67,0.92) 100%)' }} />
+        {/* Cinematic gradient overlay for technical text legibility & rich contrast */}
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(165deg, rgba(11,25,44,0.88) 0%, rgba(11,104,115,0.62) 50%, rgba(11,25,44,0.94) 100%)',
+        }} />
       </div>
 
-      {/* Floating particle dots */}
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)', backgroundSize: '28px 28px', pointerEvents: 'none' }} />
+      {/* Floating subtle grid pattern */}
+      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)', backgroundSize: '32px 32px', pointerEvents: 'none' }} />
 
       {/* Hero content — fades and scales out on scroll */}
       <div style={{
-        position: 'relative', zIndex: 10, textAlign: 'center', maxWidth: 780, padding: '0 32px',
-        marginTop: 80, /* <-- Add this line */
+        position: 'relative', zIndex: 10, textAlign: 'left', maxWidth: 960, width: '100%', padding: '0 40px',
         opacity: heroOpacity, transform: `scale(${heroScale})`,
         willChange: 'transform, opacity',
       }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(8px)', borderRadius: 999, padding: '6px 16px', marginBottom: 28, border: '1px solid rgba(255,255,255,0.18)' }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#F2A65A', display: 'inline-block' }} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.05em' }}>SOLDER-PASTE DISPENSING INTELLIGENCE</span>
+        {/* Brand Lockup: Big Logo Badge + "DARA" */}
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 20,
+          marginBottom: 24,
+        }}>
+          <div style={{
+            width: 100,
+            height: 100,
+            borderRadius: 22,
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'white',
+            padding: 8,
+            boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
+            border: '1.5px solid rgba(255,255,255,0.3)',
+            flexShrink: 0,
+          }}>
+            <img src={logoImg} alt="DARA Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          </div>
+          <span style={{
+            fontSize: 'clamp(2.2rem, 4.5vw, 3.2rem)',
+            fontWeight: 900,
+            color: '#FF5A5A',
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            textShadow: '0 4px 16px rgba(0,0,0,0.35)',
+            lineHeight: 1,
+          }}>
+            DARA
+          </span>
         </div>
 
-        <h1 style={{ fontSize: 'clamp(2.6rem, 6vw, 4.2rem)', fontWeight: 900, color: 'white', lineHeight: 1.08, letterSpacing: '-0.04em', margin: '0 0 24px' }}>
-          Solder-paste dispensing,<br />
-          <span style={{ color: '#F2A65A' }}>root cause</span> at scale
+        {/* Main Headline: AI DEFECT DETECTIVE */}
+        <h1 style={{
+          fontSize: 'clamp(2.8rem, 6.5vw, 5rem)',
+          fontWeight: 900,
+          color: 'white',
+          lineHeight: 1.05,
+          letterSpacing: '-0.035em',
+          margin: '0 0 20px',
+          textTransform: 'uppercase',
+          textShadow: '0 4px 24px rgba(0,0,0,0.4)',
+        }}>
+          AI DEFECT DETECTIVE
         </h1>
 
-        <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.65)', lineHeight: 1.65, marginBottom: 40, maxWidth: 580, margin: '0 auto 40px' }}>
-          AI-powered inspection for PCB assembly teams: detect insufficient paste, bridging, misalignment, and volume variation before rework spreads.
+        {/* Secondary Descriptor */}
+        <p style={{
+          fontSize: 'clamp(1.05rem, 2vw, 1.25rem)',
+          color: 'rgba(255,255,255,0.85)',
+          lineHeight: 1.6,
+          marginBottom: 16,
+          maxWidth: 720,
+          margin: '0 0 16px',
+          fontWeight: 400,
+        }}>
+          An Advanced AI solution for Precision Manufacturing Quality Control. Providing rapid Defect Detection and Root Cause Analysis.
         </p>
 
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+        {/* Tagline */}
+        <p style={{
+          fontSize: 'clamp(1.1rem, 2.2vw, 1.35rem)',
+          color: '#FF5A5A',
+          fontWeight: 700,
+          lineHeight: 1.5,
+          marginBottom: 36,
+          maxWidth: 680,
+          margin: '0 0 36px',
+          letterSpacing: '-0.01em',
+        }}>
+          Helping Manufacturers Identify Dispensing Problems Faster with AI.
+        </p>
+
+        <div style={{ display: 'flex', gap: 14, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={onStartScan}
-            style={{ background: '#D66A2C', color: 'white', border: 'none', borderRadius: 999, padding: '14px 32px', fontSize: 15, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 8px 32px rgba(214,106,44,0.4)' }}
+            style={{ background: '#D66A2C', color: 'white', border: 'none', borderRadius: 999, padding: '16px 36px', fontSize: 15, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 8px 32px rgba(214,106,44,0.45)' }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#B85320'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#D66A2C'; (e.currentTarget as HTMLButtonElement).style.transform = '' }}
-          >Start a line scan</button>
+          >Start a line scan →</button>
           <button
             type="button"
             onClick={() => document.getElementById('inspection-flow')?.scrollIntoView({ behavior: 'smooth' })}
-            style={{ background: 'rgba(255,255,255,0.1)', color: 'white', border: '1.5px solid rgba(255,255,255,0.25)', borderRadius: 999, padding: '14px 32px', fontSize: 15, fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(8px)', transition: 'all 0.2s' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.18)' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)' }}
+            style={{ background: 'rgba(255,255,255,0.12)', color: 'white', border: '1.5px solid rgba(255,255,255,0.28)', borderRadius: 999, padding: '16px 36px', fontSize: 15, fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(8px)', transition: 'all 0.2s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.22)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.12)' }}
           >See the inspection flow ↓</button>
         </div>
       </div>
 
-      {/* Floating hero screenshot — moves faster than background for depth */}
-      <div
-        ref={cardRef}
-        style={{
-          position: 'relative', zIndex: 10, marginTop: 64, width: '100%', maxWidth: 980, padding: '0 24px',
-          transform: `translateY(${fgOffset}px)`,
-          willChange: 'transform',
-        }}
-      >
-        <div style={{ borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 100px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08)', background: 'white' }}>
-          <DashboardMockup />
-        </div>
-      </div>
-
       {/* Scroll cue */}
-      <div style={{ position: 'absolute', bottom: 36, left: '50%', transform: 'translateX(-50%)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, opacity: heroOpacity }}>
+      <div style={{ position: 'absolute', bottom: 32, left: '50%', transform: 'translateX(-50%)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, opacity: heroOpacity }}>
         <span style={{ fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.12em' }}>SCROLL</span>
-        <div style={{ width: 1, height: 40, background: 'linear-gradient(to bottom, rgba(255,255,255,0.4), transparent)' }} />
+        <div style={{ width: 1, height: 36, background: 'linear-gradient(to bottom, rgba(255,255,255,0.4), transparent)' }} />
       </div>
     </section>
   )
@@ -406,8 +475,8 @@ function DashboardMockup() {
     <div style={{ background: '#F7F6FB', fontFamily: 'inherit' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', background: 'white', borderBottom: '1px solid rgba(79,70,229,0.07)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 22, height: 22, borderRadius: 6, background: '#0B6873', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 7.5L3.5 3.5L5.5 5.5L7.5 2" stroke="white" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <div style={{ width: 22, height: 22, borderRadius: 6, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', border: '1px solid rgba(11,104,115,0.2)' }}>
+            <img src={logoImg} alt="DARA Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           </div>
           <span style={{ fontWeight: 800, fontSize: 12, color: '#1F2033' }}>DARA</span>
           <span style={{ fontSize: 11, color: 'rgba(31,32,51,0.35)' }}>/ Dashboard Overview</span>
@@ -767,8 +836,8 @@ function Footer() {
     <footer style={{ background: 'white', borderTop: '1px solid rgba(79,70,229,0.08)', padding: '40px 48px' }}>
       <div style={{ maxWidth: 1180, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 26, height: 26, borderRadius: 7, background: '#0B6873', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 9L4.5 4.5L7 7L9.5 3" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <div style={{ width: 28, height: 28, borderRadius: 7, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', padding: 2, border: '1px solid rgba(11,104,115,0.15)' }}>
+            <img src={logoImg} alt="DARA Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           </div>
           <span style={{ fontWeight: 800, fontSize: 15, color: '#1F2033' }}>DARA</span>
           <span style={{ fontSize: 12, color: 'rgba(31,32,51,0.3)' }}>Dispensing Analysis &amp; Root-cause Assistant for PCB assembly</span>
