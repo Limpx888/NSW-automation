@@ -31,12 +31,32 @@ ANSWER_LABELS = {
 }
 
 
-def _score_to_stars(score: float | int | None, invert: bool = False) -> int:
+def _is_defect_case(case: dict) -> bool:
+    defect_class = str(case.get("defect_class") or "").lower().strip()
+    defect_label = str(case.get("defect_label") or "").lower().strip()
+    non_defect_terms = {"", "pass", "no_defect", "no_defect_detected", "none", "ok", "normal"}
+    if defect_class in non_defect_terms and defect_label in non_defect_terms:
+        return False
+    return True
+
+
+def _score_to_stars(score: float | int | str | None, invert: bool = False) -> int:
     if score is None:
         return 0
+    if isinstance(score, str):
+        mapping = {"low": 1.0, "medium": 3.0, "high": 5.0}
+        val = mapping.get(score.strip().lower())
+        if val is not None:
+            return int(6.0 - val) if invert else int(val)
+        try:
+            score = float(score)
+        except ValueError:
+            return 0
     value = float(score)
+    if 0 < value <= 5.0:
+        value = value * 20.0
     if invert:
-        value = 100 - value
+        value = 100.0 - value
     if value >= 90:
         return 5
     if value >= 75:
@@ -48,6 +68,32 @@ def _score_to_stars(score: float | int | None, invert: bool = False) -> int:
     if value > 0:
         return 1
     return 0
+
+
+def _parse_subscore_value(val: Any) -> float | None:
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_risk_value(risk: Any) -> float | None:
+    if risk is None:
+        return None
+    if isinstance(risk, (int, float)):
+        return float(risk)
+    if isinstance(risk, str):
+        mapping = {"low": 1.5, "medium": 3.0, "high": 4.5}
+        val = mapping.get(risk.strip().lower())
+        if val is not None:
+            return val
+        try:
+            return float(risk)
+        except ValueError:
+            return None
+    return None
 
 
 def _as_pct(confidence: float | None) -> float:
@@ -112,7 +158,7 @@ def _detection_rows(case: dict) -> list[DetectionRow]:
                 area_px=_box_area(det),
             )
         )
-    if not rows and (case.get("detection_count") or 0) > 0:
+    if not rows and _is_defect_case(case):
         rows.append(
             DetectionRow(
                 id=1,
@@ -133,15 +179,31 @@ def _defect_distribution(rows: list[DetectionRow], case: dict) -> list[ChartSlic
     label = str(case.get("defect_label") or case.get("defect_class") or "Pass")
     count = float(case.get("detection_count") or 0)
     if count <= 0:
-        return [ChartSlice(label="Pass / No Defect", value=1)]
+        if _is_defect_case(case):
+            return [ChartSlice(label=label, value=1.0)]
+        return [ChartSlice(label="Pass / No Defect", value=1.0)]
     return [ChartSlice(label=label, value=count)]
 
 
 def _build_problem_description(case: dict) -> str:
+    answers = case.get("answers") or {}
+    user_desc = (
+        case.get("problem_description")
+        or answers.get("problem_description")
+        or answers.get("user_description")
+        or answers.get("description")
+    )
+    if user_desc and str(user_desc).strip():
+        return str(user_desc).strip()
+
     label = case.get("defect_label") or case.get("defect_class") or "Unknown defect"
     filename = case.get("filename") or "uploaded image"
     detections = case.get("detection_count") or 0
-    answers = case.get("answers") or {}
+    if filename == "Text Description":
+        return (
+            f"Qualitative solder-paste assessment flagged {label}. "
+            f"Operator context: {_format_answers(answers)}."
+        )
     return (
         f"Solder-paste inspection of '{filename}' flagged {label} "
         f"with {detections} detection(s). Operator context: {_format_answers(answers)}."
@@ -154,7 +216,10 @@ def _generate_analysis_summary(
     rows: list[DetectionRow],
 ) -> tuple[str, str, str, list[str], list[str]]:
     """Return executive_summary, process_insight, deep_analysis, findings, maintenance."""
+    is_defect = _is_defect_case(case)
     total = len(rows) or int(case.get("detection_count") or 0)
+    if is_defect and total == 0:
+        total = 1
     answers = case.get("answers") or {}
     freq = str(answers.get("frequency") or "")
     top = causes[0] if causes else None
@@ -163,7 +228,7 @@ def _generate_analysis_summary(
     quality = case.get("quality_score")
     label = case.get("defect_label") or case.get("defect_class") or "defect"
 
-    if total == 0:
+    if not is_defect and total == 0:
         summary = (
             "Process operating within target specification limits. "
             "No actionable defects detected on this inspection frame."
@@ -182,9 +247,9 @@ def _generate_analysis_summary(
         return summary, insight, deep, findings, maintenance
 
     severity = "HIGH" if total > 3 or conf_pct >= 90 else "MODERATE"
-    if "continuous" in freq:
+    if "continuous" in freq.lower():
         pattern = "systematic process drift"
-    elif "intermittent" in freq or "first" in freq:
+    elif "intermittent" in freq.lower() or "first" in freq.lower() or "idle" in freq.lower():
         pattern = "intermittent fluid instability"
     else:
         pattern = "process variation requiring operator confirmation"
@@ -202,15 +267,24 @@ def _generate_analysis_summary(
     )
 
     insight = (
-        f"Observed behavior indicates {pattern}. Weighted inference combined YOLO confidence "
+        f"Observed behavior indicates {pattern}. Weighted inference combined "
+        f"{'qualitative input' if case.get('filename') == 'Text Description' else 'YOLO confidence'} "
         f"({conf_pct:.0f}%) with shop-floor Q&A ({_format_answers(answers)}) to rank root causes."
     )
 
-    findings = [
-        f"Feature & area extraction identified {total} defect region(s) for {label}.",
-        f"Vision confidence {conf_pct:.0f}% with overall quality score "
-        f"{quality if quality is not None else 'n/a'}/100.",
-    ]
+    is_text = (case.get("filename") == "Text Description") or not (case.get("detections"))
+    if is_text:
+        findings = [
+            f"Qualitative defect diagnostic identified issue: {label}.",
+            f"Confidence {conf_pct:.0f}% with overall quality score "
+            f"{quality if quality is not None else 'n/a'}/100.",
+        ]
+    else:
+        findings = [
+            f"Feature & area extraction identified {total} defect region(s) for {label}.",
+            f"Vision confidence {conf_pct:.0f}% with overall quality score "
+            f"{quality if quality is not None else 'n/a'}/100.",
+        ]
     if top:
         gap = (top.score - second.score) if second else top.score
         if gap >= 15:
@@ -231,13 +305,22 @@ def _generate_analysis_summary(
     risk = case.get("defect_risk")
     metric_bits = []
     if shape is not None:
-        metric_bits.append(f"shape {float(shape):.0f}")
+        try:
+            metric_bits.append(f"shape {float(shape):.1f}")
+        except (ValueError, TypeError):
+            pass
     if size is not None:
-        metric_bits.append(f"size {float(size):.0f}")
+        try:
+            metric_bits.append(f"size {float(size):.1f}")
+        except (ValueError, TypeError):
+            pass
     if position is not None:
-        metric_bits.append(f"position {float(position):.0f}")
+        try:
+            metric_bits.append(f"position {float(position):.1f}")
+        except (ValueError, TypeError):
+            pass
     if risk is not None:
-        metric_bits.append(f"defect risk {float(risk):.0f}")
+        metric_bits.append(f"defect risk {risk}")
     if metric_bits:
         findings.append("Quality breakdown: " + "; ".join(metric_bits) + ".")
 
@@ -247,18 +330,19 @@ def _generate_analysis_summary(
         "Inspect the dispensing nozzle for partial blockage or misalignment.",
         "Verify pressure, on-time, and Z-gap against the last known-good recipe.",
     ]
-    if answers.get("recent_change") == "nozzle":
+    recent_change = str(answers.get("recent_change") or "").lower()
+    if "nozzle" in recent_change:
         maintenance.insert(
             1, "Recent nozzle change reported - prioritize tip ID and seating checks."
         )
-    if answers.get("recent_change") == "material":
+    if "material" in recent_change or "paste" in recent_change:
         maintenance.insert(
             1, "Recent material change reported - verify paste warm-up and viscosity."
         )
 
     deep = " ".join(
         [
-            f"Vision confidence for {label} is {conf_pct:.0f}% with an overall dispensing "
+            f"Assessment confidence for {label} is {conf_pct:.0f}% with an overall dispensing "
             f"quality score of {quality if quality is not None else 'n/a'}/100.",
             findings[2] if len(findings) > 2 else "",
             insight,
@@ -270,7 +354,7 @@ def _generate_analysis_summary(
 
 def _build_similar_note(case: dict) -> str | None:
     defect_class = case.get("defect_class")
-    if not defect_class:
+    if not defect_class or not _is_defect_case(case):
         return None
     total, top_cause_name, top_cause_count = history.count_similar_cases(
         defect_class,
@@ -314,45 +398,63 @@ def build_report_data(session_id: str) -> ReportData:
     action_plan: list[str] = []
     for step in case.get("action_plan") or []:
         if isinstance(step, dict):
-            title = step.get("title") or f"Step {step.get('step', '')}"
-            detail = step.get("detail") or ""
-            action_plan.append(f"{title}: {detail}".strip(": ").strip())
+            action_text = (
+                step.get("action")
+                or step.get("detail")
+                or step.get("description")
+                or ""
+            )
+            cause_title = step.get("title") or step.get("cause")
+            if cause_title and action_text:
+                action_plan.append(f"{cause_title}: {action_text}")
+            elif action_text:
+                action_plan.append(action_text)
+            elif cause_title:
+                action_plan.append(cause_title)
+            else:
+                step_num = step.get("step")
+                action_plan.append(f"Step {step_num}" if step_num else str(step))
         else:
             action_plan.append(str(step))
 
     rows = _detection_rows(case)
+    is_defect = _is_defect_case(case)
     detection_count = len(rows) or int(case.get("detection_count") or 0)
+    if is_defect and detection_count == 0:
+        detection_count = 1
     conf_pct = _as_pct(case.get("confidence"))
-    overall = int(case.get("quality_score") or 0)
-    severity = "LOW" if detection_count == 0 else ("HIGH" if detection_count > 3 or conf_pct >= 90 else "MODERATE")
+
+    raw_overall = case.get("quality_score")
+    if raw_overall is not None and raw_overall > 0:
+        overall = int(raw_overall)
+    elif conf_pct > 0:
+        overall = int(round(conf_pct))
+    else:
+        overall = 0
+
+    severity = "LOW" if not is_defect else ("HIGH" if detection_count > 3 or conf_pct >= 90 else "MODERATE")
     yield_pct = max(0.0, min(100.0, float(overall)))
 
     quality_subscores = [
         QualitySubScore(
             label="Shape Consistency",
             stars=_score_to_stars(case.get("shape_consistency")),
-            value=float(case["shape_consistency"])
-            if case.get("shape_consistency") is not None
-            else None,
+            value=_parse_subscore_value(case.get("shape_consistency")),
         ),
         QualitySubScore(
             label="Size Consistency",
             stars=_score_to_stars(case.get("size_consistency")),
-            value=float(case["size_consistency"])
-            if case.get("size_consistency") is not None
-            else None,
+            value=_parse_subscore_value(case.get("size_consistency")),
         ),
         QualitySubScore(
             label="Dispensing Position",
             stars=_score_to_stars(case.get("dispensing_position")),
-            value=float(case["dispensing_position"])
-            if case.get("dispensing_position") is not None
-            else None,
+            value=_parse_subscore_value(case.get("dispensing_position")),
         ),
         QualitySubScore(
             label="Defect Risk (inverted)",
             stars=_score_to_stars(case.get("defect_risk"), invert=True),
-            value=float(case["defect_risk"]) if case.get("defect_risk") is not None else None,
+            value=_parse_risk_value(case.get("defect_risk")),
         ),
     ]
 

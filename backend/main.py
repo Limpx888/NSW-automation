@@ -122,6 +122,7 @@ async def run_diagnostics(
     frequency: str = Form(""),
     recent_change: str = Form(""),
     location: str = Form(""),
+    problem_description: str = Form(""),
     session_id: str = Form(None),
     user_email: str = Form(None),
 ):
@@ -136,7 +137,8 @@ async def run_diagnostics(
         "frequency": frequency,
         "recent_change": recent_change,
         "location": location,
-        "material": material
+        "material": material,
+        "problem_description": problem_description or "",
     }
     result = wf.run(answers)
 
@@ -287,6 +289,7 @@ async def run_diagnostics(
         "defect_class": result.defect_class,
         "defect_label": result.defect_label,
         "confidence": result.confidence,
+        "problem_description": problem_description or "",
         "answers": answers,
         "causes": formatted_causes,
         "action_plan": formatted_actions,
@@ -309,12 +312,43 @@ async def run_diagnostics(
         
         history.upsert_diagnosed_case(payload)
     else:
-        # TEXT WORKFLOW: Create a brand new case and provide safe empty defaults for the UI
+        # TEXT WORKFLOW: Create a brand new case using dynamic calculations instead of hardcoded defaults
         payload["filename"] = "Text Description"
         payload["annotated_image_base64"] = ""
-        payload["overall_quality_score"] = 0
-        payload["quality"] = {}
-        payload["vision"] = {}
+        
+        # 1. Derive quality score organically from the calculated dynamic confidence (e.g., lower confidence = higher risk score drop)
+        base_score = int(round(dynamic_confidence * 100))
+        estimated_score = max(40, min(95, base_score))
+        
+        # 2. Derive star ratings (1.0 to 5.0 scale) based on the confidence ratio
+        star_rating = round(max(1.0, min(5.0, dynamic_confidence * 5)), 1)
+        
+        # 3. Determine defect risk category dynamically based on score thresholds
+        if estimated_score >= 85:
+            risk_stars = 1.5
+        elif estimated_score >= 65:
+            risk_stars = 3.0
+        else:
+            risk_stars = 4.5
+
+        payload["overall_quality_score"] = estimated_score
+        payload["quality"] = {
+            "overall_quality_score": estimated_score,
+            "shape_consistency": star_rating,
+            "size_consistency": star_rating,
+            "dispensing_position": star_rating,
+            "defect_risk": risk_stars
+        }
+        
+        # 4. Use actual diagnostic classification data instead of mock regions
+        payload["vision"] = {
+            "defect_class": result.defect_class,
+            "defect_label": result.defect_label,
+            "confidence": result.confidence,
+            "detection_count": 1
+        }
+        
+        # Register a qualitative text report indicator rather than fake image coordinates
         payload["detections"] = []
         payload["detection_count"] = 0
         

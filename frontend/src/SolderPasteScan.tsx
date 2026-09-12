@@ -304,7 +304,7 @@ export default function SolderPasteScan({ onBack, userEmail, onViewReport }: { o
 
   const runDiagnose = async (
     analysisResult: AnalyzeResponse | null,
-    _description: string | null,
+    description: string | null,
     answers: Record<string, string>,
   ) => {
     setDiagnosing(true)
@@ -331,6 +331,9 @@ export default function SolderPasteScan({ onBack, userEmail, onViewReport }: { o
       formData.append("frequency", freqVal) // <-- Using the formatted value
       formData.append("recent_change", answers["recent_change"] || "")
       formData.append("location", answers["location_large_branch"] || "")
+      if (description) {
+        formData.append("problem_description", description)
+      }
       if (userEmail) {
         formData.append("user_email", userEmail)
       }
@@ -338,9 +341,6 @@ export default function SolderPasteScan({ onBack, userEmail, onViewReport }: { o
       // ADD THIS LINE: Pass the existing session_id if it is an image upload
       if (analysisResult?.session_id) {
         formData.append("session_id", analysisResult.session_id)
-      }
-      if (userEmail) {
-        formData.append("user_email", userEmail)
       }
 
       const res = await fetch('/api/diagnose', {

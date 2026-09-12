@@ -97,6 +97,7 @@ export type HistoryCaseSummary = {
 }
 
 export type HistoryCaseDetail = HistoryCaseSummary & {
+  problem_description?: string | null
   shape_consistency?: number | null
   size_consistency?: number | null
   dispensing_position?: number | null

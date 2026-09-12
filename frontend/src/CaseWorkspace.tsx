@@ -1124,11 +1124,11 @@ export function ReportsView({
               style={{
                 background: "white",
                 borderRadius: 24,
-                maxWidth: 820,
+                maxWidth: 1160,
                 width: "100%",
-                maxHeight: "90vh",
+                maxHeight: "92vh",
                 overflowY: "auto",
-                padding: 28,
+                padding: "32px 36px",
                 boxShadow: "0 25px 60px rgba(0,0,0,0.3)",
                 border: "1px solid rgba(255,255,255,0.2)",
               }}
@@ -1221,38 +1221,158 @@ export function ReportsView({
                         marginBottom: 20,
                       }}
                     >
-                      <div>
-                        {selectedCase.annotated_image_base64 ? (
-                          <div
-                            style={{
-                              borderRadius: 16,
-                              overflow: "hidden",
-                              border: "1px solid #E2E8F0",
-                              background: "#0F172A",
-                            }}
-                          >
-                            <img
-                              src={`data:image/jpeg;base64,${selectedCase.annotated_image_base64}`}
-                              alt="Annotated inspection"
-                              style={{ width: "100%", maxHeight: 260, objectFit: "cover" }}
-                            />
+                      {(() => {
+                        const problemDescription =
+                          selectedCase.problem_description ||
+                          selectedCase.answers?.problem_description ||
+                          selectedCase.answers?.user_description ||
+                          selectedCase.answers?.description ||
+                          report?.problem_description ||
+                          (selectedCase.answers?.amount
+                            ? `${selectedCase.answers.amount}${
+                                selectedCase.answers.frequency ? ` · ${selectedCase.answers.frequency}` : ""
+                              }${selectedCase.answers.recent_change ? ` · ${selectedCase.answers.recent_change}` : ""}`
+                            : "Manual Text Description Record");
+
+                        const contextTags: string[] = [];
+                        if (selectedCase.answers?.amount && !problemDescription.includes(selectedCase.answers.amount)) {
+                          contextTags.push(`Symptom: ${selectedCase.answers.amount}`);
+                        }
+                        if (selectedCase.answers?.frequency && !problemDescription.includes(selectedCase.answers.frequency)) {
+                          contextTags.push(`Frequency: ${selectedCase.answers.frequency}`);
+                        }
+                        if (selectedCase.answers?.recent_change && !problemDescription.includes(selectedCase.answers.recent_change)) {
+                          contextTags.push(`Recent Change: ${selectedCase.answers.recent_change}`);
+                        }
+
+                        return (
+                          <div>
+                            {selectedCase.annotated_image_base64 ? (
+                              <div
+                                style={{
+                                  borderRadius: 16,
+                                  overflow: "hidden",
+                                  border: "1px solid #E2E8F0",
+                                  background: "#0F172A",
+                                }}
+                              >
+                                <img
+                                  src={`data:image/jpeg;base64,${selectedCase.annotated_image_base64}`}
+                                  alt="Annotated inspection"
+                                  style={{ width: "100%", maxHeight: 260, objectFit: "cover" }}
+                                />
+                              </div>
+                            ) : (
+                              <div
+                                style={{
+                                  height: "100%",
+                                  minHeight: 180,
+                                  padding: "20px 22px",
+                                  borderRadius: 16,
+                                  background: "#F8FAFC",
+                                  border: "1px solid #E2E8F0",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  justifyContent: "space-between",
+                                }}
+                              >
+                                <div>
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      marginBottom: 12,
+                                    }}
+                                  >
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                      <div
+                                        style={{
+                                          width: 28,
+                                          height: 28,
+                                          borderRadius: 8,
+                                          background: "rgba(11,104,115,0.1)",
+                                          color: "#0B6873",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                        }}
+                                      >
+                                        <FileText style={{ width: 16, height: 16 }} />
+                                      </div>
+                                      <span
+                                        style={{
+                                          fontSize: 11,
+                                          fontWeight: 800,
+                                          color: "#0B6873",
+                                          textTransform: "uppercase",
+                                          letterSpacing: "0.06em",
+                                        }}
+                                      >
+                                        Problem Description
+                                      </span>
+                                    </div>
+                                    <span
+                                      style={{
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        color: "#64748B",
+                                        background: "#EDF2F7",
+                                        padding: "3px 8px",
+                                        borderRadius: 6,
+                                      }}
+                                    >
+                                      User Input
+                                    </span>
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      fontSize: 14,
+                                      lineHeight: 1.6,
+                                      color: "#1E293B",
+                                      fontWeight: 500,
+                                      background: "white",
+                                      padding: "14px 16px",
+                                      borderRadius: 12,
+                                      border: "1px solid #E2E8F0",
+                                    }}
+                                  >
+                                    {problemDescription}
+                                  </div>
+                                </div>
+
+                                {contextTags.length > 0 && (
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      flexWrap: "wrap",
+                                      gap: 6,
+                                      marginTop: 12,
+                                    }}
+                                  >
+                                    {contextTags.map((tag, i) => (
+                                      <span
+                                        key={i}
+                                        style={{
+                                          fontSize: 11,
+                                          color: "#475569",
+                                          background: "white",
+                                          padding: "3px 8px",
+                                          borderRadius: 6,
+                                          border: "1px solid #E2E8F0",
+                                        }}
+                                      >
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        ) : (
-                          <div
-                            style={{
-                              padding: 32,
-                              borderRadius: 16,
-                              background: "#F1F5F9",
-                              color: "#64748B",
-                              textAlign: "center",
-                              fontSize: 13,
-                            }}
-                          >
-                            <FileText style={{ width: 36, height: 36, margin: "0 auto 8px", color: "#94A3B8" }} />
-                            Manual Text Description Record
-                          </div>
-                        )}
-                      </div>
+                        );
+                      })()}
 
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         <div
@@ -1306,77 +1426,97 @@ export function ReportsView({
                     </div>
 
                     {/* Causes Likelihood Analysis */}
-                    {(selectedCase.causes?.length || 0) > 0 && (
+                    {Array.isArray(selectedCase.causes) && selectedCase.causes.length > 0 && (
                       <div style={{ marginBottom: 20 }}>
                         <h4 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 800, color: "#102A43", textTransform: "uppercase" }}>
                           AI Cause Likelihood Analysis
                         </h4>
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          {selectedCase.causes!.map((c) => (
-                            <div
-                              key={c.cause_id || c.name}
-                              style={{
-                                background: "#F8FAFC",
-                                borderRadius: 12,
-                                padding: "12px 14px",
-                                border: "1px solid #E2E8F0",
-                              }}
-                            >
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                <strong style={{ color: "#102A43", fontSize: 14 }}>{c.name}</strong>
-                                <span style={{ color: "#0B6873", fontWeight: 800, fontSize: 14 }}>
-                                  {Number(c.likelihood_pct).toFixed(0)}%
-                                </span>
+                          {selectedCase.causes.map((c: any, index: number) => {
+                            const rawScore = c.score ?? c.likelihood_pct ?? c.probability ?? c.pct;
+                            const formattedScore = rawScore != null ? `${Number(rawScore).toFixed(0)}%` : null;
+
+                            return (
+                              <div
+                                key={c.name || index}
+                                style={{
+                                  background: "#F8FAFC",
+                                  borderRadius: 12,
+                                  padding: "12px 14px",
+                                  border: "1px solid #E2E8F0",
+                                }}
+                              >
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <strong style={{ color: "#102A43", fontSize: 14 }}>
+                                    {c.name || c.cause || "Unknown Cause"}
+                                  </strong>
+                                  {formattedScore && (
+                                    <span style={{ color: "#0B6873", fontWeight: 800, fontSize: 14 }}>
+                                      {formattedScore}
+                                    </span>
+                                  )}
+                                </div>
+                                {(c.explanation || c.reasoning || c.description) && (
+                                  <p style={{ margin: "4px 0 0", fontSize: 13, color: "#475569" }}>
+                                    {c.explanation || c.reasoning || c.description}
+                                  </p>
+                                )}
                               </div>
-                              <p style={{ margin: "4px 0 0", fontSize: 13, color: "#475569" }}>{c.reasoning}</p>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
 
                     {/* Action Plan */}
-                    {(selectedCase.action_plan?.length || 0) > 0 && (
+                    {Array.isArray(selectedCase.action_plan) && selectedCase.action_plan.length > 0 && (
                       <div style={{ marginBottom: 20 }}>
                         <h4 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 800, color: "#102A43", textTransform: "uppercase" }}>
                           Recommended Action Plan
                         </h4>
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          {selectedCase.action_plan!.map((step, idx) => (
-                            <div
-                              key={idx}
-                              style={{
-                                display: "flex",
-                                gap: 12,
-                                background: "#F8FAFC",
-                                padding: "10px 14px",
-                                borderRadius: 12,
-                                border: "1px solid #E2E8F0",
-                              }}
-                            >
+                          {selectedCase.action_plan.map((step: any, idx: number) => {
+                            const stepNum = step?.step || idx + 1;
+                            const actionText = typeof step === "string"
+                              ? step
+                              : step?.action || step?.description || step?.title || JSON.stringify(step);
+
+                            return (
                               <div
+                                key={idx}
                                 style={{
-                                  width: 24,
-                                  height: 24,
-                                  borderRadius: "50%",
-                                  background: "#0B6873",
-                                  color: "white",
-                                  fontSize: 12,
-                                  fontWeight: 800,
                                   display: "flex",
+                                  gap: 12,
+                                  background: "#F8FAFC",
+                                  padding: "12px 14px",
+                                  borderRadius: 12,
+                                  border: "1px solid #E2E8F0",
                                   alignItems: "center",
-                                  justifyContent: "center",
-                                  flexShrink: 0,
                                 }}
                               >
-                                {step.step || idx + 1}
+                                <div
+                                  style={{
+                                    width: 24,
+                                    height: 24,
+                                    borderRadius: "50%",
+                                    background: "#0B6873",
+                                    color: "white",
+                                    fontSize: 12,
+                                    fontWeight: 800,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {stepNum}
+                                </div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "#102A43", lineHeight: 1.4 }}>
+                                  {actionText}
+                                </div>
                               </div>
-                              <div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: "#102A43" }}>{step.title}</div>
-                                <div style={{ fontSize: 12, color: "#475569", marginTop: 2 }}>{step.detail}</div>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -1489,19 +1629,6 @@ export function ReportDownloadBar({ sessionId }: { sessionId: string }) {
     }
   }
 
-  const preview = async () => {
-    setBusy(true)
-    setError("")
-    try {
-      const data = await fetchReportData(sessionId)
-      setReport(data)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Preview failed")
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <div style={{ marginTop: 20 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
@@ -1522,22 +1649,6 @@ export function ReportDownloadBar({ sessionId }: { sessionId: string }) {
         </select>
         <button
           type="button"
-          onClick={() => void preview()}
-          disabled={busy}
-          style={{
-            background: "white",
-            color: "#0B6873",
-            border: "1px solid rgba(11,104,115,0.35)",
-            borderRadius: 999,
-            padding: "10px 16px",
-            fontWeight: 700,
-            cursor: busy ? "not-allowed" : "pointer",
-          }}
-        >
-          View report
-        </button>
-        <button
-          type="button"
           onClick={() => void download()}
           disabled={busy}
           style={{
@@ -1552,15 +1663,6 @@ export function ReportDownloadBar({ sessionId }: { sessionId: string }) {
         >
           {busy ? "Working…" : "Download report"}
         </button>
-        {report && (
-          <button
-            type="button"
-            onClick={() => setReport(null)}
-            style={{ background: "none", border: "none", color: "#0B6873", fontWeight: 700, cursor: "pointer" }}
-          >
-            Hide preview
-          </button>
-        )}
       </div>
       {error && <p style={{ margin: "10px 0 0", color: "#991B1B", fontSize: 13 }}>{error}</p>}
       {report && (

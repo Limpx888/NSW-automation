@@ -100,13 +100,16 @@ def _row_to_summary(row: sqlite3.Row) -> dict[str, Any]:
 
 def _row_to_detail(row: sqlite3.Row) -> dict[str, Any]:
     summary = _row_to_summary(row)
+    answers = _loads(row["answers_json"]) or {}
+    problem_desc = answers.get("problem_description") or answers.get("user_description") or answers.get("description")
     summary.update(
         {
+            "problem_description": problem_desc,
             "shape_consistency": row["shape_consistency"],
             "size_consistency": row["size_consistency"],
             "dispensing_position": row["dispensing_position"],
             "defect_risk": row["defect_risk"],
-            "answers": _loads(row["answers_json"]) or {},
+            "answers": answers,
             "causes": _loads(row["causes_json"]) or [],
             "action_plan": _loads(row["action_plan_json"]) or [],
             "detections": _loads(row["detections_json"]) or [],
