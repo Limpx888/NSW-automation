@@ -16,6 +16,20 @@ const panel: CSSProperties = {
   boxShadow: "0 16px 40px rgba(16,42,67,0.06)",
 }
 
+// 1. HELPER: Clean raw snake_case strings (e.g., nozzle_blockage -> Nozzle Blockage)
+function formatTitle(raw?: string | null): string {
+  if (!raw) return "—"
+  return raw
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+// 2. HELPER: Strip prefix tags like "nozzle_blockage: " or "vision: " from solution text
+function cleanSolutionText(text: string): string {
+  if (!text) return ""
+  return text.replace(/^[a-z0-9_]+:\s*/i, "")
+}
+
 function asList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.map((item) => (typeof item === "string" ? item : String((item as { name?: string })?.name || item))).filter(Boolean)
@@ -107,9 +121,14 @@ export default function LearningDatabase({
     }
   }
 
+  // 3. FIX: Dynamic pluralization and formatted titles
+  const totalCount = stats?.total_cases ?? 0
+  const topCauseCount = stats?.cause_breakdown[0]?.count ?? 0
+  const topCauseFormatted = formatTitle(stats?.cause_breakdown[0]?.name)
+
   const exampleInsight =
     stats && stats.cause_breakdown[0]
-      ? `Similar problems occurred ${stats.total_cases} times previously. In ${stats.cause_breakdown[0].count} cases, the main cause was ${stats.cause_breakdown[0].name}.`
+      ? `Similar problems occurred ${totalCount} ${totalCount === 1 ? "time" : "times"} previously. In ${topCauseCount} ${topCauseCount === 1 ? "case" : "cases"}, the main cause was ${topCauseFormatted}.`
       : null
 
   return (
@@ -158,7 +177,7 @@ export default function LearningDatabase({
           {[
             { label: "Cases logged", value: stats?.total_cases ?? "—" },
             { label: "Successful fixes recorded", value: stats?.resolved_count ?? "—" },
-            { label: "Leading confirmed cause", value: stats?.top_cause || "—" },
+            { label: "Leading confirmed cause", value: formatTitle(stats?.top_cause) }, // 4. FIX: Apply formatting to Leading Cause Stat
           ].map((card) => (
             <div key={card.label} style={panel}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em" }}>
@@ -260,14 +279,13 @@ export default function LearningDatabase({
           {loading ? (
             <p style={{ margin: 0, fontSize: 14, color: "#64748B" }}>Loading cases…</p>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
               <thead>
                 <tr style={{ textAlign: "left", color: "#64748B", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                  {["Dispensing problem", "Possible causes", "Recommended solutions", "Successful solution"].map((h) => (
-                    <th key={h} style={{ padding: "8px 10px", borderBottom: "1px solid rgba(16,42,67,0.1)", fontWeight: 700 }}>
-                      {h}
-                    </th>
-                  ))}
+                  <th style={{ padding: "12px 14px", borderBottom: "1px solid rgba(16,42,67,0.1)", fontWeight: 700, width: "22%" }}>Dispensing problem</th>
+                  <th style={{ padding: "12px 14px", borderBottom: "1px solid rgba(16,42,67,0.1)", fontWeight: 700, width: "20%" }}>Possible causes</th>
+                  <th style={{ padding: "12px 14px", borderBottom: "1px solid rgba(16,42,67,0.1)", fontWeight: 700, width: "38%" }}>Recommended solutions</th>
+                  <th style={{ padding: "12px 14px", borderBottom: "1px solid rgba(16,42,67,0.1)", fontWeight: 700, width: "20%" }}>Successful solution</th>
                 </tr>
               </thead>
               <tbody>
@@ -276,34 +294,74 @@ export default function LearningDatabase({
                   const solutions = asList(row.recommended_solutions)
                   return (
                     <tr key={row.case_id} style={{ verticalAlign: "top" }}>
-                      <td style={{ padding: "12px 10px", borderBottom: "1px solid rgba(16,42,67,0.06)", color: "#102A43", fontWeight: 600, maxWidth: 260 }}>
-                        {row.dispensing_problem}
+                      <td style={{ padding: "16px 14px", borderBottom: "1px solid rgba(16,42,67,0.06)", color: "#102A43" }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            lineHeight: 1.5,
+                            marginBottom: 8
+                          }}
+                        >
+                          {row.dispensing_problem}
+                        </div>
                         {row.defect_label && (
-                          <div style={{ marginTop: 4, fontSize: 11, fontWeight: 700, color: "#0B6873" }}>{row.defect_label}</div>
+                          <span style={{
+                            display: "inline-block",
+                            padding: "3px 8px",
+                            fontSize: 10,
+                            fontWeight: 800,
+                            color: "#0B6873",
+                            background: "rgba(11,104,115,0.08)",
+                            borderRadius: 6,
+                            letterSpacing: "0.04em",
+                            textTransform: "uppercase"
+                          }}>
+                            {row.defect_label}
+                          </span>
                         )}
                       </td>
-                      <td style={{ padding: "12px 10px", borderBottom: "1px solid rgba(16,42,67,0.06)", color: "#475569" }}>
-                        {causes.length ? causes.map((c) => <div key={c}>• {c}</div>) : "—"}
+
+                      <td style={{ padding: "16px 14px", borderBottom: "1px solid rgba(16,42,67,0.06)", color: "#475569" }}>
+                        {causes.length ? (
+                          <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5, listStyleType: "disc" }}>
+                            {causes.map((c) => (
+                              <li key={c} style={{ marginBottom: 6 }}>
+                                {formatTitle(c)}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : "—"}
                       </td>
-                      <td style={{ padding: "12px 10px", borderBottom: "1px solid rgba(16,42,67,0.06)", color: "#475569" }}>
-                        {solutions.length ? solutions.map((s) => <div key={s}>• {s}</div>) : "—"}
+
+                      <td style={{ padding: "16px 14px", borderBottom: "1px solid rgba(16,42,67,0.06)", color: "#475569" }}>
+                        {solutions.length ? (
+                          <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5, listStyleType: "disc" }}>
+                            {solutions.map((s) => (
+                              <li key={s} style={{ marginBottom: 8 }}>
+                                {cleanSolutionText(s)}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : "—"}
                       </td>
-                      <td style={{ padding: "12px 10px", borderBottom: "1px solid rgba(16,42,67,0.06)", color: "#047857", fontWeight: 600 }}>
+
+                      <td style={{ padding: "16px 14px", borderBottom: "1px solid rgba(16,42,67,0.06)", color: "#047857", fontWeight: 600, lineHeight: 1.5 }}>
                         {row.successful_solution ? (
-                          row.successful_solution
+                          cleanSolutionText(row.successful_solution)
                         ) : markingId === row.case_id ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            <input
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            <textarea
                               value={markDraft}
                               onChange={(e) => setMarkDraft(e.target.value)}
                               placeholder="What worked?"
-                              style={{ borderRadius: 8, border: "1px solid rgba(16,42,67,0.15)", padding: "6px 8px", fontSize: 12 }}
+                              rows={2}
+                              style={{ borderRadius: 8, border: "1px solid rgba(16,42,67,0.15)", padding: "8px 10px", fontSize: 12, fontFamily: "inherit", resize: "vertical" }}
                             />
                             <div style={{ display: "flex", gap: 6 }}>
-                              <button type="button" onClick={() => void confirmSuccess(row)} style={{ background: "#0B6873", color: "white", border: "none", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                              <button type="button" onClick={() => void confirmSuccess(row)} style={{ background: "#0B6873", color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                                 Save
                               </button>
-                              <button type="button" onClick={() => { setMarkingId(null); setMarkDraft("") }} style={{ background: "transparent", border: "none", color: "#64748B", fontSize: 11, cursor: "pointer" }}>
+                              <button type="button" onClick={() => { setMarkingId(null); setMarkDraft("") }} style={{ background: "transparent", border: "none", color: "#64748B", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
                                 Cancel
                               </button>
                             </div>
@@ -313,9 +371,9 @@ export default function LearningDatabase({
                             type="button"
                             onClick={() => {
                               setMarkingId(row.case_id)
-                              setMarkDraft(solutions[0] || "")
+                              setMarkDraft(cleanSolutionText(solutions[0] || ""))
                             }}
-                            style={{ background: "white", color: "#0B6873", border: "1px solid rgba(11,104,115,0.3)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                            style={{ background: "white", color: "#0B6873", border: "1px solid rgba(11,104,115,0.3)", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}
                           >
                             Record what worked
                           </button>
@@ -379,7 +437,7 @@ export function LearningInsightBanner({
                 color: "#0B6873",
               }}
             >
-              {c.name}: {c.count}
+              {formatTitle(c.name)}: {c.count} {/* 8. FIX: Format Cause Breakdown Names */}
             </span>
           ))}
         </div>
@@ -397,7 +455,7 @@ export function LearningInsightBanner({
             >
               {solutions.map((s) => (
                 <option key={s.text} value={s.text}>
-                  {s.text}
+                  {cleanSolutionText(s.text)} {/* 9. FIX: Clean Solution Text in Dropdown */}
                 </option>
               ))}
             </select>
