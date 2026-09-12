@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import type { User } from '@supabase/supabase-js'
 import SolderPasteScan from './SolderPasteScan'
 import { HistoryView, ReportsView } from './CaseWorkspace'
+import LearningDatabase from './LearningDatabase'
 import AuthModal from './AuthModal'
 import { supabase, syncUserProfile, isEmailRegistered, type UserProfile } from './lib/supabase'
 
@@ -80,13 +81,14 @@ function useInView(threshold = 0.12) {
   return { ref, inView }
 }
 
-type AppView = 'home' | 'scan' | 'reports' | 'history'
+type AppView = 'home' | 'scan' | 'reports' | 'history' | 'learning'
 
 const NAV_ITEMS: { label: string; view: AppView }[] = [
   { label: 'Dashboard', view: 'home' },
   { label: 'Upload/Describe', view: 'scan' },
   { label: 'Reports', view: 'reports' },
   { label: 'History', view: 'history' },
+  { label: 'Learning Database', view: 'learning' },
 ]
 
 // ─── Nav ───────────────────────────────────────────────────────────────────────
@@ -876,6 +878,7 @@ export default function App() {
         scan: 'Upload / Describe feature',
         reports: 'Reports feature',
         history: 'History feature',
+        learning: 'AI Learning Database',
       }
       setAuthReason(
         !user
@@ -1028,6 +1031,8 @@ export default function App() {
       )}
 
       {view === 'history' && <HistoryView onBack={() => navigate('home')} userEmail={user?.email} />}
+
+      {view === 'learning' && <LearningDatabase onBack={() => navigate('home')} userEmail={user?.email} />}
     </div>
   )
 }

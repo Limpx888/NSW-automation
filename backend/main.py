@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 import pandas as pd
 import joblib
 from fastapi import Form
-from backend import history
+from backend import history, learning
 from backend.config import get_settings
 from backend.qa import answer_question
 from backend.quality import assess_quality
@@ -97,6 +97,7 @@ def _defect_from_analysis(analysis: dict[str, Any] | None) -> tuple[str, float, 
 @app.on_event("startup")
 def startup() -> None:
     history.connect().close()
+    learning.connect().close()
     load_model()
     try:
         global ml_pipeline
@@ -354,6 +355,20 @@ async def run_diagnostics(
         
         session_id = history.create_case(payload)
 
+    learning_bundle = learning.attach_to_diagnosis(
+        {
+            "session_id": session_id,
+            "user_email": user_email or None,
+            "dispensing_problem": problem_description or "",
+            "problem_description": problem_description or "",
+            "defect_class": result.defect_class,
+            "defect_label": result.defect_label,
+            "answers": answers,
+            "causes": formatted_causes,
+            "action_plan": formatted_actions,
+        }
+    )
+
     # 4. Return the complete package to the frontend
     return {
         "session_id": session_id,
@@ -371,7 +386,8 @@ async def run_diagnostics(
                 "reasoning": c["reasoning"]
             } for c in formatted_causes[:3] 
         ],
-        "action_plan": formatted_actions
+        "action_plan": formatted_actions,
+        "learning": learning_bundle,
     }
 
 
@@ -398,6 +414,8 @@ def meta() -> dict[str, Any]:
             "qa": "POST /qa (fast rule-based; optional use_gemini=true)",
             "history": "GET /history",
             "case": "GET /cases/{session_id}",
+            "learning": "GET /learning",
+            "learning_insights": "GET /learning/insights",
             "report": "GET /report/{session_id}?format=pdf|docx",
             "report_data": "GET /report/{session_id}/data",
             "report_preview": "GET /report/{session_id}/preview",
@@ -522,6 +540,17 @@ def workflow_diagnose(payload: DiagnoseRequest) -> dict[str, Any]:
         }
     )
     out["session_id"] = session_id
+    out["learning"] = learning.attach_to_diagnosis(
+        {
+            "session_id": session_id,
+            "user_email": payload.user_email or analysis.get("user_email"),
+            "defect_class": out["defect_class"],
+            "defect_label": out["defect_label"],
+            "answers": out["answers"],
+            "causes": out["causes"],
+            "action_plan": out["action_plan"],
+        }
+    )
     return out
 
 
@@ -626,6 +655,79 @@ def get_case(session_id: str) -> dict[str, Any]:
     if not case:
         raise HTTPException(404, "Case not found")
     return case
+
+
+class LearningCaseCreate(BaseModel):
+    dispensing_problem: str = Field(min_length=3)
+    possible_causes: list[str] = Field(default_factory=list)
+    recommended_solutions: list[str] = Field(default_factory=list)
+    successful_solution: str | None = None
+    successful_cause: str | None = None
+    defect_class: str | None = None
+    defect_label: str | None = None
+    user_email: str | None = None
+    session_id: str | None = None
+
+
+class LearningSuccessRequest(BaseModel):
+    case_id: str | None = None
+    session_id: str | None = None
+    successful_solution: str = Field(min_length=1)
+    successful_cause: str | None = None
+
+
+@app.get("/learning")
+def list_learning(limit: int = 100, defect_class: str | None = None) -> dict[str, Any]:
+    cases = learning.list_cases(limit=max(1, min(limit, 300)), defect_class=defect_class)
+    return {"cases": cases, "count": len(cases), "stats": learning.get_stats()}
+
+
+@app.get("/learning/insights")
+def learning_insights(
+    defect_class: str | None = None,
+    dispensing_problem: str | None = None,
+    exclude_session_id: str | None = None,
+) -> dict[str, Any]:
+    return learning.get_insights(
+        defect_class=defect_class,
+        dispensing_problem=dispensing_problem,
+        exclude_session_id=exclude_session_id,
+    )
+
+
+@app.post("/learning")
+def create_learning_case(payload: LearningCaseCreate) -> dict[str, Any]:
+    try:
+        row = learning.create_manual_case(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    insights = learning.get_insights(
+        defect_class=row.get("defect_class"),
+        dispensing_problem=row.get("dispensing_problem"),
+        exclude_case_id=row.get("case_id"),
+    )
+    return {"case": row, "insights": insights}
+
+
+@app.post("/learning/success")
+def mark_learning_success(payload: LearningSuccessRequest) -> dict[str, Any]:
+    try:
+        row = learning.mark_successful_solution(
+            case_id=payload.case_id,
+            session_id=payload.session_id,
+            successful_solution=payload.successful_solution,
+            successful_cause=payload.successful_cause,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not row:
+        raise HTTPException(404, "Learning case not found")
+    insights = learning.get_insights(
+        defect_class=row.get("defect_class"),
+        dispensing_problem=row.get("dispensing_problem"),
+        exclude_case_id=row.get("case_id"),
+    )
+    return {"case": row, "insights": insights}
 
 
 @app.get("/report/{session_id}")

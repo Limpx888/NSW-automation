@@ -274,3 +274,84 @@ export async function fetchReportData(sessionId: string): Promise<ReportPayload>
 export function reportPreviewUrl(sessionId: string) {
   return `${API_BASE}/report/${sessionId}/preview`
 }
+
+export type LearningCauseSlice = { name: string; count: number; pct: number }
+
+export type LearningInsights = {
+  similar_count: number
+  top_cause: string | null
+  top_cause_count: number
+  top_solution: string | null
+  top_solution_count: number
+  insight: string | null
+  cause_breakdown: LearningCauseSlice[]
+  solution_breakdown: LearningCauseSlice[]
+}
+
+export type LearningCase = {
+  id: number
+  case_id: string
+  session_id?: string | null
+  user_email?: string | null
+  dispensing_problem: string
+  defect_class?: string | null
+  defect_label?: string | null
+  possible_causes: string[]
+  recommended_solutions: string[]
+  successful_solution?: string | null
+  successful_cause?: string | null
+  source: string
+  created_at: string
+  updated_at: string
+}
+
+export type LearningStats = {
+  total_cases: number
+  resolved_count: number
+  top_cause: string | null
+  cause_breakdown: LearningCauseSlice[]
+}
+
+export async function fetchLearning(limit = 100): Promise<{
+  cases: LearningCase[]
+  count: number
+  stats: LearningStats
+}> {
+  const res = await fetch(`${API_BASE}/learning?limit=${limit}`)
+  if (!res.ok) throw new Error(await readError(res))
+  return res.json()
+}
+
+export async function createLearningCase(payload: {
+  dispensing_problem: string
+  possible_causes: string[]
+  recommended_solutions: string[]
+  successful_solution?: string
+  successful_cause?: string
+  defect_class?: string
+  defect_label?: string
+  user_email?: string
+}): Promise<{ case: LearningCase; insights: LearningInsights }> {
+  const res = await fetch(`${API_BASE}/learning`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error(await readError(res))
+  return res.json()
+}
+
+export async function markLearningSuccess(payload: {
+  case_id?: string
+  session_id?: string
+  successful_solution: string
+  successful_cause?: string
+}): Promise<{ case: LearningCase; insights: LearningInsights }> {
+  const res = await fetch(`${API_BASE}/learning/success`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error(await readError(res))
+  return res.json()
+}

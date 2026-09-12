@@ -2,14 +2,15 @@ import { useEffect, useRef, useState, type CSSProperties } from "react"
 import {
   analyzeImage,
   askQuestion,
-  diagnoseWorkflow,
   fetchMeta,
+  markLearningSuccess,
   type ActionStep,
   type AnalyzeResponse,
   type CauseRow,
-  type FollowUpQuestion,
+  type LearningInsights,
 } from "@/lib/api"
 import { ReportDownloadBar } from "@/CaseWorkspace"
+import { LearningInsightBanner } from "@/LearningDatabase"
 
 type DynamicQuestion = {
   key: string
@@ -209,6 +210,10 @@ export default function SolderPasteScan({ onBack, userEmail, onViewReport }: { o
   const [causes, setCauses] = useState<CauseRow[]>([])
   const [actionPlan, setActionPlan] = useState<ActionStep[]>([])
   const [aiExplanation, setAiExplanation] = useState<string | null>(null)
+  const [learningInsights, setLearningInsights] = useState<LearningInsights | null>(null)
+  const [learningCaseId, setLearningCaseId] = useState<string | null>(null)
+  const [recordingSuccess, setRecordingSuccess] = useState(false)
+  const [successRecorded, setSuccessRecorded] = useState(false)
   const [error, setError] = useState("")
   const [metaOk, setMetaOk] = useState<boolean | null>(null)
   const [question, setQuestion] = useState("")
@@ -247,6 +252,10 @@ export default function SolderPasteScan({ onBack, userEmail, onViewReport }: { o
     setCauses([])
     setActionPlan([])
     setAiExplanation(null)
+    setLearningInsights(null)
+    setLearningCaseId(null)
+    setRecordingSuccess(false)
+    setSuccessRecorded(false)
     setError("")
     setQuestion("")
     setChat([])
@@ -386,6 +395,10 @@ export default function SolderPasteScan({ onBack, userEmail, onViewReport }: { o
       setCauses(newCauses)
       setActionPlan(newActionPlan)
       setAiExplanation(data.ai_explanation || null)
+      const bundle = data.learning
+      setLearningInsights(bundle?.insights || null)
+      setLearningCaseId(bundle?.learning_case?.case_id || null)
+      setSuccessRecorded(Boolean(bundle?.learning_case?.successful_solution))
 
       const top = newCauses[0]
       setChat((prev) => [
@@ -401,6 +414,26 @@ export default function SolderPasteScan({ onBack, userEmail, onViewReport }: { o
       setError(err instanceof Error ? err.message : "Diagnosis failed")
     } finally {
       setDiagnosing(false)
+    }
+  }
+
+  const recordSuccessfulSolution = async (solution: string, cause?: string) => {
+    if (!learningCaseId && !result?.session_id) return
+    setRecordingSuccess(true)
+    setError("")
+    try {
+      const res = await markLearningSuccess({
+        case_id: learningCaseId || undefined,
+        session_id: result?.session_id,
+        successful_solution: solution,
+        successful_cause: cause,
+      })
+      setLearningInsights(res.insights)
+      setSuccessRecorded(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not record successful solution")
+    } finally {
+      setRecordingSuccess(false)
     }
   }
 
@@ -1023,6 +1056,25 @@ export default function SolderPasteScan({ onBack, userEmail, onViewReport }: { o
                 </div>
               </div>
             </div>
+
+            <LearningInsightBanner
+              insights={learningInsights}
+              solutions={
+                successRecorded
+                  ? undefined
+                  : actionPlan.map((step) => ({
+                      text: step.detail,
+                      cause: step.related_cause || step.title,
+                    }))
+              }
+              onRecordSuccess={successRecorded ? undefined : recordSuccessfulSolution}
+              recording={recordingSuccess}
+            />
+            {successRecorded && (
+              <p style={{ margin: "8px 0 0", fontSize: 13, color: "#047857", fontWeight: 700 }}>
+                Successful solution saved. Future similar cases will learn from this outcome.
+              </p>
+            )}
 
             {/* Fast chat */}
             <div style={{ ...card, marginTop: 20 }}>

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 
-from backend import history
+from backend import history, learning
 from backend.report.schemas import (
     Cause,
     ChartSlice,
@@ -356,6 +356,13 @@ def _build_similar_note(case: dict) -> str | None:
     defect_class = case.get("defect_class")
     if not defect_class or not _is_defect_case(case):
         return None
+    insights = learning.get_insights(
+        defect_class=defect_class,
+        dispensing_problem=case.get("problem_description") or case.get("defect_label"),
+        exclude_session_id=case.get("session_id"),
+    )
+    if insights.get("insight"):
+        return insights["insight"]
     total, top_cause_name, top_cause_count = history.count_similar_cases(
         defect_class,
         exclude_session_id=case.get("session_id"),
