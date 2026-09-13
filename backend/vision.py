@@ -1,9 +1,8 @@
-"""YOLO segmentation inference for solder-paste defect detection."""
+"""YOLO multi-model ensemble inference for solder-paste and PCB defect detection."""
 
 from __future__ import annotations
 
 import base64
-from functools import lru_cache
 from typing import Any
 
 import cv2
@@ -11,14 +10,29 @@ import numpy as np
 
 from backend.config import get_settings
 
-# Model class id → internal label (matches best (2).pt names)
-CLASS_LABELS = {
-    0: "too_little",
-    1: "too_much",
-    2: "inconsistent_size",
-    3: "missing_dot",
-    4: "spreading",
-    5: "air_bubble",
+# Normalization mapping for defect labels across models
+LABEL_NORMALIZATION = {
+    # Dispense segmentation (best.pt)
+    "too_little": "too_little",
+    "too_much": "too_much",
+    "inconsistent_size": "inconsistent_size",
+    "missing_dot": "missing_dot",
+    "spreading": "spreading",
+    "air_bubble": "air_bubble",
+
+    # Dispense detection (best_dispense.pt / best (3).pt)
+    "oversized": "too_much",
+    "undersized": "too_little",
+    "excessive_spreading": "spreading",
+    "irregular_shape": "air_bubble",
+
+    # PCB AOI detection (best_pcb_aoi.pt / best (1).pt)
+    "missing_hole": "missing_hole",
+    "mouse_bite": "mouse_bite",
+    "open_circuit": "open_circuit",
+    "short": "short",
+    "spur": "spur",
+    "spurious_copper": "spurious_copper",
 }
 
 DISPLAY_LABELS = {
@@ -28,9 +42,16 @@ DISPLAY_LABELS = {
     "missing_dot": "MISSING DOT",
     "spreading": "SPREADING",
     "air_bubble": "AIR BUBBLE / IRREGULAR",
+    "missing_hole": "MISSING HOLE",
+    "mouse_bite": "MOUSE BITE",
+    "open_circuit": "OPEN CIRCUIT",
+    "short": "SHORT CIRCUIT",
+    "spur": "COPPER SPUR",
+    "spurious_copper": "SPURIOUS COPPER",
+    "no_defect_detected": "NO DEFECT DETECTED",
 }
 
-# Distinct BGR colors per class for bounding boxes
+# Distinct RGB colors per class (converted to BGR during rendering)
 BOX_COLORS = {
     "too_little": (214, 106, 44),
     "too_much": (80, 80, 220),
@@ -38,10 +59,16 @@ BOX_COLORS = {
     "missing_dot": (40, 40, 40),
     "spreading": (242, 166, 90),
     "air_bubble": (76, 175, 80),
+    "missing_hole": (180, 50, 150),
+    "mouse_bite": (230, 130, 30),
+    "open_circuit": (230, 30, 30),
+    "short": (220, 20, 60),
+    "spur": (190, 110, 20),
+    "spurious_copper": (210, 140, 40),
 }
 
-_MODEL = None
-_MODEL_ERROR: str | None = None
+_MODELS: dict[str, Any] = {}
+_MODEL_ERRORS: dict[str, str] = {}
 
 
 def decode_image(data: bytes) -> np.ndarray:
@@ -59,39 +86,61 @@ def encode_image_b64(bgr: np.ndarray, ext: str = ".jpg") -> str:
     return base64.b64encode(buf.tobytes()).decode("ascii")
 
 
-def load_model():
-    """Load Ultralytics YOLO checkpoint once."""
-    global _MODEL, _MODEL_ERROR
-    if _MODEL is not None:
-        return _MODEL
+def load_models() -> dict[str, Any]:
+    """Load all available Ultralytics YOLO checkpoints."""
+    global _MODELS, _MODEL_ERRORS
+    if _MODELS:
+        return _MODELS
 
     settings = get_settings()
-    path = settings.model_path
-    if not path.exists():
-        _MODEL_ERROR = f"Model not found at {path}"
-        return None
+    model_configs = [
+        ("segmentation", settings.model_path),
+        ("dispense", settings.dispense_model_path),
+        ("pcb_aoi", settings.pcb_aoi_model_path),
+    ]
 
     try:
         from ultralytics import YOLO
+    except ImportError as exc:
+        _MODEL_ERRORS["import"] = f"Failed to import ultralytics: {exc}"
+        return _MODELS
 
-        _MODEL = YOLO(str(path))
-        _MODEL_ERROR = None
-        return _MODEL
-    except Exception as exc:  # noqa: BLE001 — surface load failures to /meta
-        _MODEL_ERROR = str(exc)
-        return None
+    for key, path in model_configs:
+        if path.exists() and path.is_file():
+            try:
+                model = YOLO(str(path))
+                _MODELS[key] = model
+                if key in _MODEL_ERRORS:
+                    del _MODEL_ERRORS[key]
+            except Exception as exc:  # noqa: BLE001
+                _MODEL_ERRORS[key] = str(exc)
+        else:
+            _MODEL_ERRORS[key] = f"Model file not found: {path}"
+
+    return _MODELS
+
+
+def load_model() -> Any:
+    """Backward-compatible loader for the primary segmentation model."""
+    models = load_models()
+    return models.get("segmentation") or next(iter(models.values()), None)
 
 
 def model_status() -> dict[str, Any]:
-    model = load_model()
+    models = load_models()
     settings = get_settings()
+    loaded_names = {k: getattr(m, "names", {}) for k, m in models.items()}
     return {
-        "ready": model is not None,
-        "path": str(settings.model_path),
-        "error": _MODEL_ERROR,
-        "task": getattr(model, "task", None) if model else None,
+        "ready": len(models) > 0,
+        "loaded_models": list(models.keys()),
+        "paths": {
+            "segmentation": str(settings.model_path),
+            "dispense": str(settings.dispense_model_path),
+            "pcb_aoi": str(settings.pcb_aoi_model_path),
+        },
+        "errors": _MODEL_ERRORS,
         "classes": list(DISPLAY_LABELS.values()),
-        "labels": CLASS_LABELS,
+        "model_classes": loaded_names,
     }
 
 
@@ -109,13 +158,58 @@ def _xyxy_to_box(xyxy: np.ndarray) -> dict[str, float]:
     }
 
 
+def _box_iou(box1: dict[str, float], box2: dict[str, float]) -> float:
+    """Compute Intersection over Union between two box dictionaries."""
+    x1 = max(box1["x1"], box2["x1"])
+    y1 = max(box1["y1"], box2["y1"])
+    x2 = min(box1["x2"], box2["x2"])
+    y2 = min(box1["y2"], box2["y2"])
+
+    intersection = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    if intersection == 0.0:
+        return 0.0
+
+    area1 = max(0.0, box1["x2"] - box1["x1"]) * max(0.0, box1["y2"] - box1["y1"])
+    area2 = max(0.0, box2["x2"] - box2["x1"]) * max(0.0, box2["y2"] - box2["y1"])
+    union = area1 + area2 - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def _apply_nms(detections: list[dict[str, Any]], iou_thresh: float = 0.5) -> list[dict[str, Any]]:
+    """Deduplicate overlapping detections across multiple models."""
+    if not detections:
+        return []
+
+    # Sort descending by confidence
+    sorted_dets = sorted(detections, key=lambda d: d["confidence"], reverse=True)
+    kept: list[dict[str, Any]] = []
+
+    for cand in sorted_dets:
+        suppressed = False
+        for k in kept:
+            iou = _box_iou(cand["box"], k["box"])
+            if iou > iou_thresh:
+                # If candidate has a mask and kept doesn't, attach mask to kept
+                if "mask" in cand and "mask" not in k:
+                    k["mask"] = cand["mask"]
+                suppressed = True
+                break
+        if not suppressed:
+            kept.append(cand)
+
+    # Re-index
+    for idx, d in enumerate(kept):
+        d["id"] = idx
+    return kept
+
+
 def _draw_detections(bgr: np.ndarray, detections: list[dict[str, Any]]) -> np.ndarray:
     out = bgr.copy()
     for det in detections:
         box = det["box"]
         label = det["label"]
         color = BOX_COLORS.get(label, (11, 104, 115))
-        # OpenCV uses BGR; our palette is RGB-ish — convert
+        # OpenCV uses BGR; BOX_COLORS is RGB-ish -> convert
         bgr_color = (color[2], color[1], color[0])
         pt1 = (int(box["x1"]), int(box["y1"]))
         pt2 = (int(box["x2"]), int(box["y2"]))
@@ -144,56 +238,72 @@ def _draw_detections(bgr: np.ndarray, detections: list[dict[str, Any]]) -> np.nd
                 (0.55 * np.array(bgr_color) + 0.45 * overlay[mask > 0]).astype(np.uint8)
             )
             out = cv2.addWeighted(overlay, 0.45, out, 0.55, 0)
-            # re-draw box after blend for crisp edges
+            # Re-draw box after blend for crisp edges
             cv2.rectangle(out, pt1, pt2, bgr_color, 2)
 
     return out
 
 
 def analyze_image(bgr: np.ndarray) -> dict[str, Any]:
-    """Run YOLO segmentation and return detections + annotated preview."""
-    model = load_model()
+    """Run multi-model YOLO inference and return unified detections + annotated preview."""
+    models = load_models()
     settings = get_settings()
     h, w = bgr.shape[:2]
 
-    if model is None:
-        raise RuntimeError(_MODEL_ERROR or "YOLO model is not loaded")
+    if not models:
+        raise RuntimeError("No YOLO models loaded: " + str(_MODEL_ERRORS))
 
-    results = model.predict(
-        source=bgr,
-        conf=settings.yolo_conf,
-        iou=settings.yolo_iou,
-        verbose=False,
-    )
-    result = results[0]
-    names = result.names or CLASS_LABELS
+    raw_candidates: list[dict[str, Any]] = []
 
-    detections: list[dict[str, Any]] = []
-    if result.boxes is not None and len(result.boxes):
-        boxes_xyxy = result.boxes.xyxy.cpu().numpy()
-        confs = result.boxes.conf.cpu().numpy()
-        clss = result.boxes.cls.cpu().numpy().astype(int)
-        masks_data = None
-        if result.masks is not None and result.masks.data is not None:
-            masks_data = result.masks.data.cpu().numpy()
+    for model_key, model in models.items():
+        try:
+            results = model.predict(
+                source=bgr,
+                conf=settings.yolo_conf,
+                iou=settings.yolo_iou,
+                verbose=False,
+            )
+            if not results:
+                continue
 
-        for i, (xyxy, conf, cls_id) in enumerate(zip(boxes_xyxy, confs, clss)):
-            raw_name = names.get(int(cls_id), CLASS_LABELS.get(int(cls_id), str(cls_id)))
-            label = raw_name if raw_name in DISPLAY_LABELS else CLASS_LABELS.get(int(cls_id), raw_name)
-            det: dict[str, Any] = {
-                "id": i,
-                "class_id": int(cls_id),
-                "label": label,
-                "display_label": DISPLAY_LABELS.get(label, label.replace("_", " ").upper()),
-                "confidence": round(float(conf), 4),
-                "box": _xyxy_to_box(xyxy),
-            }
-            if masks_data is not None and i < len(masks_data):
-                mask = masks_data[i]
-                if mask.shape[:2] != (h, w):
-                    mask = cv2.resize(mask.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
-                det["mask"] = (mask > 0.5).astype(np.uint8)
-            detections.append(det)
+            result = results[0]
+            names = result.names or {}
+
+            if result.boxes is not None and len(result.boxes):
+                boxes_xyxy = result.boxes.xyxy.cpu().numpy()
+                confs = result.boxes.conf.cpu().numpy()
+                clss = result.boxes.cls.cpu().numpy().astype(int)
+                masks_data = None
+                if result.masks is not None and result.masks.data is not None:
+                    masks_data = result.masks.data.cpu().numpy()
+
+                for i, (xyxy, conf, cls_id) in enumerate(zip(boxes_xyxy, confs, clss)):
+                    raw_name = str(names.get(int(cls_id), str(cls_id))).strip()
+                    lookup_key = raw_name.lower().replace(" ", "_").replace("-", "_")
+                    label = LABEL_NORMALIZATION.get(lookup_key, lookup_key)
+                    display_label = DISPLAY_LABELS.get(label, label.replace("_", " ").upper())
+
+                    det: dict[str, Any] = {
+                        "class_id": int(cls_id),
+                        "raw_name": raw_name,
+                        "model_source": model_key,
+                        "label": label,
+                        "display_label": display_label,
+                        "confidence": round(float(conf), 4),
+                        "box": _xyxy_to_box(xyxy),
+                    }
+                    if masks_data is not None and i < len(masks_data):
+                        mask = masks_data[i]
+                        if mask.shape[:2] != (h, w):
+                            mask = cv2.resize(mask.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+                        det["mask"] = (mask > 0.5).astype(np.uint8)
+
+                    raw_candidates.append(det)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Warning: Model {model_key} inference failed: {exc}")
+
+    # Deduplicate overlapping detections across models
+    detections = _apply_nms(raw_candidates, iou_thresh=settings.yolo_iou)
 
     # Primary defect = highest confidence, else majority vote
     if detections:
@@ -220,7 +330,8 @@ def analyze_image(bgr: np.ndarray) -> dict[str, Any]:
         serializable.append(item)
 
     return {
-        "method": "yolo_seg",
+        "method": "yolo_multi_ensemble",
+        "loaded_models": list(models.keys()),
         "image_size": {"width": w, "height": h},
         "detection_count": len(serializable),
         "defect_class": primary_label,

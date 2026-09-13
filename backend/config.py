@@ -18,25 +18,38 @@ class Settings(BaseSettings):
     )
 
     yolo_model_path: str = "backend/weights/best.pt"
+    yolo_dispense_path: str = "backend/weights/best_dispense.pt"
+    yolo_pcb_aoi_path: str = "backend/weights/best_pcb_aoi.pt"
     yolo_conf: float = 0.25
     yolo_iou: float = 0.45
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash-lite"
     cors_origins: str = "http://localhost:8443,http://127.0.0.1:8443"
 
-    @property
-    def model_path(self) -> Path:
-        raw = Path(self.yolo_model_path)
+    def _resolve_model_path(self, raw_path: str, default_name: str) -> Path:
+        raw = Path(raw_path)
         candidates = [
             raw if raw.is_absolute() else ROOT / raw,
             raw if raw.is_absolute() else BACKEND_DIR / raw,
-            BACKEND_DIR / "weights" / "best.pt",
-            ROOT / "backend" / "weights" / "best.pt",
+            BACKEND_DIR / "weights" / default_name,
+            ROOT / "backend" / "weights" / default_name,
         ]
         for candidate in candidates:
             if candidate.exists() and candidate.is_file():
                 return candidate.resolve()
         return raw if raw.is_absolute() else ROOT / raw
+
+    @property
+    def model_path(self) -> Path:
+        return self._resolve_model_path(self.yolo_model_path, "best.pt")
+
+    @property
+    def dispense_model_path(self) -> Path:
+        return self._resolve_model_path(self.yolo_dispense_path, "best_dispense.pt")
+
+    @property
+    def pcb_aoi_model_path(self) -> Path:
+        return self._resolve_model_path(self.yolo_pcb_aoi_path, "best_pcb_aoi.pt")
 
     @property
     def cors_origin_list(self) -> list[str]:

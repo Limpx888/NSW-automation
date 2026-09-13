@@ -7,11 +7,17 @@ from typing import Any
 import numpy as np
 
 SEVERITY = {
+    "short": 0.95,
+    "open_circuit": 0.92,
     "missing_dot": 0.9,
+    "missing_hole": 0.88,
     "spreading": 0.78,
-    "too_much": 0.68,
-    "too_little": 0.62,
+    "mouse_bite": 0.75,
     "inconsistent_size": 0.72,
+    "spur": 0.70,
+    "too_much": 0.68,
+    "spurious_copper": 0.65,
+    "too_little": 0.62,
     "air_bubble": 0.58,
     "no_defect_detected": 0.08,
 }
