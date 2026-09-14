@@ -856,6 +856,37 @@ function Footer() {
   )
 }
 
+// ─── Idle Timeout Hook ────────────────────────────────────────────────────────
+function useIdleTimeout(onIdle: () => void, idleTime: number = 1000 * 60 * 15) {
+  const onIdleRef = useRef(onIdle)
+
+  useEffect(() => {
+    onIdleRef.current = onIdle
+  }, [onIdle])
+
+  useEffect(() => {
+    let timeoutId: number
+    const handleActivity = () => {
+      window.clearTimeout(timeoutId)
+      timeoutId = window.setTimeout(() => onIdleRef.current(), idleTime)
+    }
+
+    handleActivity()
+    window.addEventListener('mousemove', handleActivity)
+    window.addEventListener('keydown', handleActivity)
+    window.addEventListener('click', handleActivity)
+    window.addEventListener('scroll', handleActivity)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+      window.removeEventListener('mousemove', handleActivity)
+      window.removeEventListener('keydown', handleActivity)
+      window.removeEventListener('click', handleActivity)
+      window.removeEventListener('scroll', handleActivity)
+    }
+  }, [idleTime])
+}
+
 // ─── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   // 1. Initialize view based on URL parameters (e.g., ?case_id=... should open 'reports')
@@ -931,6 +962,14 @@ export default function App() {
     setTargetReportId(null)
     setView('home')
   }
+
+  // Auto-logout after 15 minutes of inactivity
+  useIdleTimeout(() => {
+    if (user) {
+      void handleSignOut()
+      handleOpenAuth('You have been automatically signed out due to inactivity.')
+    }
+  }, 15 * 60 * 1000)
 
   const navigate = (next: AppView) => {
     if (next === 'home') {
