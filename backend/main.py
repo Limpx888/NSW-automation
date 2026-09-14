@@ -21,6 +21,8 @@ from backend.report.pdf_renderer import render_pdf, render_report_html
 from backend.reasoning import MultimodalEvidenceFusion, QuestionOption
 from backend.vision import analyze_image, decode_image, load_model, model_status
 from backend.workflow import PostInspectionWorkflow
+from backend.cloud.supabase_client import client_status as cloud_client_status
+from backend.cloud.embeddings import embedder_status as cloud_embedder_status
 
 app = FastAPI(
     title="DARA Solder Paste Scan",
@@ -874,3 +876,48 @@ def extract_symptoms(payload: TextDescription):
     except Exception as exc:
         print(f"Gemini symptom extraction failed or timed out: {exc}, using fallback heuristic.")
         return fallback_extraction(payload.text)
+
+
+# ── Cloud RAG Copilot ─────────────────────────────────────────────────────────
+
+class CloudRagRequest(BaseModel):
+    defect_type: str
+    defect_label: str = ""
+    problem: str = ""
+    size_um: float | None = None
+    pressure: float | None = None
+    viscosity: float | None = None
+    top_k: int = Field(default=3, ge=1, le=10)
+
+
+@app.post("/cloud/rag")
+def cloud_rag_copilot(payload: CloudRagRequest) -> dict[str, Any]:
+    """
+    RAG-powered technician guidance.
+
+    1. Searches the Supabase cloud knowledge base for similar past incidents.
+    2. Falls back to the local SQLite learning DB when cloud is unavailable.
+    3. Synthesises a 3-step action plan using Gemini.
+    4. Falls back to a deterministic rule-based summary when Gemini is unavailable.
+    """
+    from backend.cloud.rag_assistant import generate_technician_guidance
+    result = generate_technician_guidance(
+        defect_type=payload.defect_type,
+        defect_label=payload.defect_label,
+        problem=payload.problem,
+        size_um=payload.size_um,
+        pressure=payload.pressure,
+        viscosity=payload.viscosity,
+        top_k=payload.top_k,
+    )
+    return result
+
+
+@app.get("/cloud/status")
+def cloud_status() -> dict[str, Any]:
+    """Report the health of cloud integrations (Supabase + embedder)."""
+    return {
+        "supabase": cloud_client_status(),
+        "embedder": cloud_embedder_status(),
+    }
+

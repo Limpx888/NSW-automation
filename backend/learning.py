@@ -439,7 +439,16 @@ def mark_successful_solution(
         (row["case_id"],),
     ).fetchone()
     conn.close()
-    return _row_to_dict(updated)
+    result = _row_to_dict(updated)
+
+    # ── Cloud sync: push confirmed fix immediately ──────────────────────────
+    try:
+        from backend.cloud.ingest import upload_learning_case
+        upload_learning_case(result)
+    except Exception:  # noqa: BLE001
+        pass
+
+    return result
 
 
 def list_cases(
@@ -569,6 +578,14 @@ def attach_to_diagnosis(payload: dict[str, Any], db_path: Path | None = None) ->
         exclude_session_id=payload.get("session_id"),
         db_path=db_path,
     )
+
+    # ── Cloud sync (fire-and-forget, never raises) ──────────────────────────
+    try:
+        from backend.cloud.ingest import upload_learning_case
+        upload_learning_case(row)
+    except Exception:  # noqa: BLE001
+        pass
+
     return {"learning_case": row, "insights": insights}
 
 
@@ -593,3 +610,4 @@ def get_stats(db_path: Path | None = None) -> dict[str, Any]:
             for name, count in cause_counter.most_common(8)
         ],
     }
+

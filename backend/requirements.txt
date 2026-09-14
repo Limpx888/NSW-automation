@@ -19,3 +19,6 @@ fpdf2>=2.7.0
 pandas>=2.2.0
 joblib>=1.4.0
 scikit-learn>=1.4.0
+# Cloud knowledge-base (Supabase + vector embeddings)
+supabase>=2.0.0
+sentence-transformers>=3.0.0

@@ -355,3 +355,43 @@ export async function markLearningSuccess(payload: {
   if (!res.ok) throw new Error(await readError(res))
   return res.json()
 }
+
+export type CloudRagResult = {
+  guidance: string
+  past_cases: {
+    id?: number
+    case_id?: string
+    defect_type?: string
+    defect_label?: string
+    dispensing_problem?: string
+    root_cause?: string
+    resolution_action?: string
+    similarity?: number
+    source?: string
+  }[]
+  case_count: number
+  source: "cloud" | "local_db" | "deterministic"
+  provider: "gemini" | "rule_based"
+}
+
+export async function fetchCloudRag(
+  defect_type: string,
+  opts: { defect_label?: string; problem?: string; top_k?: number } = {},
+): Promise<CloudRagResult> {
+  const res = await fetch(`${API_BASE}/cloud/rag`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ defect_type, ...opts }),
+  })
+  if (!res.ok) throw new Error(await readError(res))
+  return res.json()
+}
+
+export async function fetchCloudStatus(): Promise<{
+  supabase: { ready: boolean; url: string; error: string | null }
+  embedder: { model: string; dim: number; ready: boolean; error: string | null }
+}> {
+  const res = await fetch(`${API_BASE}/cloud/status`)
+  if (!res.ok) throw new Error(await readError(res))
+  return res.json()
+}

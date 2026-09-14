@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.0-flash-lite"
     cors_origins: str = "http://localhost:8443,http://127.0.0.1:8443"
 
+    # Supabase cloud knowledge-base (optional — leave blank to disable cloud features)
+    supabase_url: str = ""
+    supabase_service_key: str = ""
+
+
     def _resolve_model_path(self, raw_path: str, default_name: str) -> Path:
         raw = Path(raw_path)
         candidates = [
