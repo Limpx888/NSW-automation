@@ -306,10 +306,10 @@ def upsert_from_diagnosis(payload: dict[str, Any], db_path: Path | None = None) 
             (session_id,),
         ).fetchone()
 
-    # ADDED: Check by problem description to avoid duplicates!
     if not existing and problem:
+        # === MODIFY HERE: Use LOWER() for case-insensitive matching ===
         existing = conn.execute(
-            "SELECT * FROM learning_cases WHERE dispensing_problem = ?",
+            "SELECT * FROM learning_cases WHERE LOWER(dispensing_problem) = LOWER(?)",
             (problem,),
         ).fetchone()
 
@@ -385,6 +385,20 @@ def create_manual_case(payload: dict[str, Any], db_path: Path | None = None) -> 
     problem = str(payload.get("dispensing_problem") or "").strip()
     if not problem:
         raise ValueError("dispensing_problem is required")
+        
+    # === NEW: Anti-duplication check (case-insensitive) ===
+    conn = connect(db_path)
+    duplicate = conn.execute(
+        "SELECT case_id FROM learning_cases WHERE LOWER(dispensing_problem) = LOWER(?)",
+        (problem,)
+    ).fetchone()
+    conn.close()
+    
+    if duplicate:
+        # Throw an error; the frontend's catch block will intercept this and show it in the red banner
+        raise ValueError("This dispensing problem already exists in the Case Library.")
+    # =================================
+
     return upsert_from_diagnosis(
         {
             **payload,
