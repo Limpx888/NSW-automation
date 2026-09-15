@@ -19,9 +19,10 @@ export default function AuthModal({
   initialMode,
   onSuccess,
 }: AuthModalProps) {
-  const [mode, setMode] = useState<'signin' | 'register'>(initialMode || 'signin')
+  const [mode, setMode] = useState<'signin' | 'register' | 'forgot-password' | 'verify-otp'>(initialMode || 'signin')
   const [email, setEmail] = useState(initialEmail)
   const [password, setPassword] = useState('')
+  const [otp, setOtp] = useState('')
   const [fullName, setFullName] = useState('')
   const [company, setCompany] = useState('')
 
@@ -37,6 +38,7 @@ export default function AuthModal({
       setMode(initialMode || 'signin')
       setEmail(initialEmail || '')
       setPassword('')
+      setOtp('')
       setFullName('')
       setCompany('')
       setErrorMsg(null)
@@ -81,6 +83,40 @@ export default function AuthModal({
     const cleanEmail = email.trim()
 
     try {
+      if (mode === 'forgot-password') {
+        const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail)
+        if (error) {
+          setErrorMsg(error.message)
+        } else {
+          setSuccessMsg('Recovery email sent! Please check your inbox for your 6-digit temporary password.')
+          setMode('verify-otp')
+        }
+        setLoading(false)
+        return
+      }
+
+      if (mode === 'verify-otp') {
+        const { data, error } = await supabase.auth.verifyOtp({
+          email: cleanEmail,
+          token: otp,
+          type: 'recovery'
+        })
+        if (error) {
+          setErrorMsg(error.message)
+        } else if (data.session) {
+          await syncUserProfile(data.session.user)
+          setSuccessMsg('Temporary password accepted! Signed in successfully.')
+          setTimeout(() => {
+            onSuccess?.()
+            onClose()
+          }, 600)
+        } else {
+          setErrorMsg('Invalid or expired temporary password.')
+        }
+        setLoading(false)
+        return
+      }
+
       if (mode === 'signin') {
         // 1. Check if this email exists in Supabase registrations or profiles
         const emailExists = await checkEmailExists(cleanEmail)
@@ -283,7 +319,7 @@ export default function AuthModal({
             <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: '-0.02em' }}>DARA AI</span>
           </div>
           <h2 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 4px', color: 'white' }}>
-            {mode === 'register' ? 'Create Your Account' : 'Welcome Back'}
+            {mode === 'register' ? 'Create Your Account' : mode === 'forgot-password' ? 'Reset Password' : mode === 'verify-otp' ? 'Enter Temporary Password' : 'Welcome Back'}
           </h2>
           <p style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.75)', margin: 0 }}>
             {reason || 'Sign in or register to access AI Solder Paste Inspection features'}
@@ -292,8 +328,8 @@ export default function AuthModal({
 
         {/* Form Body */}
         <div style={{ padding: '28px 32px' }}>
-          {/* Google Auth Button (Only in Sign In mode) */}
-          {mode === 'signin' && (
+          {/* Google Auth Button (Only in Sign In or Register mode) */}
+          {mode !== 'forgot-password' && mode !== 'verify-otp' && mode === 'signin' && (
             <>
               <button
                 type="button"
@@ -359,7 +395,8 @@ export default function AuthModal({
           )}
 
           {/* Tabs */}
-          <div
+          {mode !== 'forgot-password' && mode !== 'verify-otp' ? (
+            <div
             style={{
               display: 'flex',
               background: '#F1F5F9',
@@ -414,7 +451,32 @@ export default function AuthModal({
             >
               Sign In
             </button>
-          </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setMode('signin')
+                setErrorMsg(null)
+                setSuccessMsg(null)
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#0B6873',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                marginBottom: 20,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: 0
+              }}
+            >
+              ← Back to Sign In
+            </button>
+          )}
 
           {/* Info, Error & Success Messages */}
           {infoMsg && (
@@ -562,36 +624,75 @@ export default function AuthModal({
               />
             </div>
 
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: '#475569',
-                  marginBottom: 4,
-                }}
-              >
-                Password *
-              </label>
-              <input
-                type="password"
-                required
-                minLength={6}
-                placeholder="••••••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  borderRadius: 10,
-                  border: '1px solid #CBD5E1',
-                  fontSize: 14,
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
-              />
-            </div>
+            {mode === 'verify-otp' && (
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                  Temporary Password (6-digit code) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="123456"
+                  value={otp}
+                  onChange={e => setOtp(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px 14px', borderRadius: 10,
+                    border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+            )}
+
+            {mode !== 'forgot-password' && mode !== 'verify-otp' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: '#475569',
+                    }}
+                  >
+                    Password *
+                  </label>
+                  {mode === 'signin' && (
+                    <button
+                      type="button"
+                      onClick={() => setMode('forgot-password')}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#0B6873',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: 0
+                      }}
+                    >
+                      Forgot Password?
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    border: '1px solid #CBD5E1',
+                    fontSize: 14,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+            )}
 
             <button
               type="submit"
@@ -619,9 +720,17 @@ export default function AuthModal({
               {loading
                 ? mode === 'register'
                   ? 'Registering...'
+                  : mode === 'forgot-password'
+                  ? 'Sending...'
+                  : mode === 'verify-otp'
+                  ? 'Verifying...'
                   : 'Signing In...'
                 : mode === 'register'
                 ? 'Complete Registration'
+                : mode === 'forgot-password'
+                ? 'Send Recovery Email'
+                : mode === 'verify-otp'
+                ? 'Sign In'
                 : 'Sign In'}
             </button>
           </form>

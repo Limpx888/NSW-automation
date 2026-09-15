@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js'
 import SolderPasteScan from './SolderPasteScan'
 import { HistoryView, ReportsView } from './CaseWorkspace'
 import LearningDatabase from './LearningDatabase'
+import ProfileView from './ProfileView'
 import AuthModal from './AuthModal'
 import { supabase, syncUserProfile, isEmailRegistered, type UserProfile } from './lib/supabase'
 import { fetchRealtimeCaseVolume, type CaseVolumeData } from './lib/api'
@@ -86,7 +87,7 @@ function useInView(threshold = 0.12) {
   return { ref, inView }
 }
 
-type AppView = 'home' | 'scan' | 'reports' | 'history' | 'learning'
+type AppView = 'home' | 'scan' | 'reports' | 'history' | 'learning' | 'profile'
 
 const NAV_ITEMS: { label: string; view: AppView }[] = [
   { label: 'Dashboard', view: 'home' },
@@ -192,7 +193,9 @@ function Nav({
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {user ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div
+            <button
+              type="button"
+              onClick={() => onNavigate('profile')}
               title={user.email || ''}
               style={{
                 display: 'flex',
@@ -202,6 +205,7 @@ function Nav({
                 padding: '5px 12px 5px 6px',
                 borderRadius: 999,
                 border: `1px solid ${scrolled ? 'rgba(11,104,115,0.2)' : 'rgba(255,255,255,0.25)'}`,
+                cursor: 'pointer',
               }}
             >
               <div
@@ -233,7 +237,7 @@ function Nav({
               >
                 {displayName}
               </span>
-            </div>
+            </button>
             <button
               type="button"
               onClick={onSignOut}
@@ -1313,6 +1317,14 @@ export default function App() {
       {view === 'history' && <HistoryView onBack={() => navigate('home')} userEmail={user?.email} />}
 
       {view === 'learning' && <LearningDatabase onBack={() => navigate('home')} userEmail={user?.email} />}
+
+      {view === 'profile' && (
+        <ProfileView
+          onBack={() => navigate('home')}
+          user={user}
+          profile={profile}
+        />
+      )}
     </div>
   )
 }
