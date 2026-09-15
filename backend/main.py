@@ -964,3 +964,71 @@ def cloud_status() -> dict[str, Any]:
         "embedder": cloud_embedder_status(),
     }
 
+
+# ── Live Dashboard Endpoints (KeYing branch) ──────────────────────────────────
+
+@app.get("/realtime/case-volume")
+def get_realtime_case_volume(months_back: int = 6, user_email: str | None = None) -> dict[str, Any]:
+    """Return monthly case counts for the MiniHistory sparkline chart."""
+    import sqlite3
+    from datetime import datetime, timezone
+    from dateutil.relativedelta import relativedelta
+
+    db_path = history.DB_PATH
+    now = datetime.now(tz=timezone.utc)
+
+    labels: list[str] = []
+    values: list[int] = []
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        for i in range(months_back - 1, -1, -1):
+            month_dt = now - relativedelta(months=i)
+            label = month_dt.strftime("%b")
+            y, m = month_dt.year, month_dt.month
+            if user_email:
+                cur.execute(
+                    "SELECT COUNT(*) FROM scan_cases WHERE strftime('%Y', created_at)=? AND strftime('%m', created_at)=? AND user_email=?",
+                    (str(y), f"{m:02d}", user_email),
+                )
+            else:
+                cur.execute(
+                    "SELECT COUNT(*) FROM scan_cases WHERE strftime('%Y', created_at)=? AND strftime('%m', created_at)=?",
+                    (str(y), f"{m:02d}"),
+                )
+            count = (cur.fetchone() or (0,))[0]
+            labels.append(label)
+            values.append(count)
+        conn.close()
+    except Exception:
+        # Fallback if table doesn't exist yet
+        labels = [(now - relativedelta(months=i)).strftime("%b") for i in range(months_back - 1, -1, -1)]
+        values = [0] * months_back
+
+    # Trend: compare last month vs. previous month
+    trend_pct: float | None = None
+    if len(values) >= 2 and values[-2] > 0:
+        trend_pct = round(((values[-1] - values[-2]) / values[-2]) * 100, 1)
+
+    return {"labels": labels, "values": values, "trend_pct": trend_pct}
+
+
+@app.get("/dashboard/metrics")
+def get_dashboard_metrics() -> dict[str, Any]:
+    """Return total scans and defects intercepted for the ESG impact panel."""
+    import sqlite3
+    db_path = history.DB_PATH
+    total_scans = 0
+    defects_intercepted = 0
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM scan_cases")
+        total_scans = (cur.fetchone() or (0,))[0]
+        cur.execute("SELECT COUNT(*) FROM scan_cases WHERE defect_class IS NOT NULL AND defect_class != 'no_defect_detected' AND defect_class != ''")
+        defects_intercepted = (cur.fetchone() or (0,))[0]
+        conn.close()
+    except Exception:
+        pass
+    return {"total_scans": total_scans, "defects_intercepted": defects_intercepted}

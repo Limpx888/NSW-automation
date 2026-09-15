@@ -12,59 +12,63 @@ from backend.config import get_settings
 
 # Normalization mapping for defect labels across models
 LABEL_NORMALIZATION = {
-    # Dispense segmentation (best.pt)
-    "too_little": "too_little",
-    "too_much": "too_much",
-    "inconsistent_size": "inconsistent_size",
-    "missing_dot": "missing_dot",
-    "spreading": "spreading",
-    "air_bubble": "air_bubble",
+    # Primary defect detector (defect_detector.pt) — deploy_config.json classes
+    "missing_void": "missing_void",
+    "oversized": "oversized",
+    "undersized": "undersized",
+    "irregular_shape": "irregular_shape",
+    "excessive_spreading": "excessive_spreading",
 
-    # Dispense detection (best_dispense.pt / best (3).pt)
-    "oversized": "too_much",
-    "undersized": "too_little",
-    "excessive_spreading": "spreading",
-    "irregular_shape": "air_bubble",
+    # Pattern classifier (pattern_classifier.pt) — pattern types
+    "micro_bump": "micro_bump",
+    "micro_lines": "micro_lines",
+    "micro_dam": "micro_dam",
+    "micro_cavity": "micro_cavity",
 
-    # PCB AOI detection (best_pcb_aoi.pt / best (1).pt)
-    "missing_hole": "missing_hole",
-    "mouse_bite": "mouse_bite",
-    "open_circuit": "open_circuit",
-    "short": "short",
-    "spur": "spur",
-    "spurious_copper": "spurious_copper",
+    # Legacy dispense labels (kept for backward compat with old models/records)
+    "too_little": "undersized",
+    "too_much": "oversized",
+    "inconsistent_size": "irregular_shape",
+    "missing_dot": "missing_void",
+    "spreading": "excessive_spreading",
+    "air_bubble": "irregular_shape",
+
+    # Legacy PCB-AOI labels
+    "missing_hole": "missing_void",
+    "mouse_bite": "irregular_shape",
+    "open_circuit": "missing_void",
+    "short": "oversized",
+    "spur": "irregular_shape",
+    "spurious_copper": "excessive_spreading",
 }
 
 DISPLAY_LABELS = {
-    "too_little": "UNDER DISPENSE",
-    "too_much": "OVER DISPENSE",
-    "inconsistent_size": "INCONSISTENT DISPENSING VOLUME",
-    "missing_dot": "MISSING DOT",
-    "spreading": "SPREADING",
-    "air_bubble": "AIR BUBBLE / IRREGULAR",
-    "missing_hole": "MISSING HOLE",
-    "mouse_bite": "MOUSE BITE",
-    "open_circuit": "OPEN CIRCUIT",
-    "short": "SHORT CIRCUIT",
-    "spur": "COPPER SPUR",
-    "spurious_copper": "SPURIOUS COPPER",
+    # New deploy classes
+    "missing_void": "MISSING / VOID DEPOSIT",
+    "oversized": "OVER DISPENSE (OVERSIZED)",
+    "undersized": "UNDER DISPENSE (UNDERSIZED)",
+    "irregular_shape": "IRREGULAR SHAPE",
+    "excessive_spreading": "EXCESSIVE SPREADING",
+    # Pattern types
+    "micro_bump": "MICRO BUMP PATTERN",
+    "micro_lines": "MICRO LINES PATTERN",
+    "micro_dam": "MICRO DAM PATTERN",
+    "micro_cavity": "MICRO CAVITY PATTERN",
+    # Fallback
     "no_defect_detected": "NO DEFECT DETECTED",
 }
 
 # Distinct RGB colors per class (converted to BGR during rendering)
 BOX_COLORS = {
-    "too_little": (214, 106, 44),
-    "too_much": (80, 80, 220),
-    "inconsistent_size": (11, 104, 115),
-    "missing_dot": (40, 40, 40),
-    "spreading": (242, 166, 90),
-    "air_bubble": (76, 175, 80),
-    "missing_hole": (180, 50, 150),
-    "mouse_bite": (230, 130, 30),
-    "open_circuit": (230, 30, 30),
-    "short": (220, 20, 60),
-    "spur": (190, 110, 20),
-    "spurious_copper": (210, 140, 40),
+    "missing_void": (40, 40, 40),
+    "oversized": (80, 80, 220),
+    "undersized": (214, 106, 44),
+    "irregular_shape": (76, 175, 80),
+    "excessive_spreading": (242, 166, 90),
+    "micro_bump": (11, 104, 115),
+    "micro_lines": (180, 50, 150),
+    "micro_dam": (230, 130, 30),
+    "micro_cavity": (230, 30, 30),
 }
 
 _MODELS: dict[str, Any] = {}
@@ -94,10 +98,12 @@ def load_models() -> dict[str, Any]:
 
     settings = get_settings()
     model_configs = [
-        ("segmentation", settings.model_path),
-        ("dispense", settings.dispense_model_path),
-        ("pcb_aoi", settings.pcb_aoi_model_path),
+        ("defect_detector", settings.model_path),
+        ("pattern_classifier", settings.dispense_model_path),
     ]
+    # Only include pcb_aoi if a path is configured
+    if settings.pcb_aoi_model_path is not None:
+        model_configs.append(("pcb_aoi", settings.pcb_aoi_model_path))
 
     try:
         from ultralytics import YOLO
@@ -106,7 +112,7 @@ def load_models() -> dict[str, Any]:
         return _MODELS
 
     for key, path in model_configs:
-        if path.exists() and path.is_file():
+        if path and path.exists() and path.is_file():
             try:
                 model = YOLO(str(path))
                 _MODELS[key] = model
@@ -134,10 +140,10 @@ def model_status() -> dict[str, Any]:
         "ready": len(models) > 0,
         "loaded_models": list(models.keys()),
         "paths": {
-            "segmentation": str(settings.model_path),
-            "dispense": str(settings.dispense_model_path),
-            "pcb_aoi": str(settings.pcb_aoi_model_path),
+            "defect_detector": str(settings.model_path),
+            "pattern_classifier": str(settings.dispense_model_path),
         },
+        "conf_threshold": settings.yolo_conf,
         "errors": _MODEL_ERRORS,
         "classes": list(DISPLAY_LABELS.values()),
         "model_classes": loaded_names,

@@ -17,10 +17,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    yolo_model_path: str = "backend/weights/best.pt"
-    yolo_dispense_path: str = "backend/weights/best_dispense.pt"
-    yolo_pcb_aoi_path: str = "backend/weights/best_pcb_aoi.pt"
-    yolo_conf: float = 0.25
+    # Latest dispensing_inspection_deploy models
+    yolo_model_path: str = "backend/weights/defect_detector.pt"
+    yolo_dispense_path: str = "backend/weights/pattern_classifier.pt"
+    yolo_pcb_aoi_path: str = ""  # no separate PCB-AOI model in latest deploy
+    yolo_conf: float = 0.55  # from deploy_config.json conf_threshold
     yolo_iou: float = 0.45
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash-lite"
@@ -46,15 +47,19 @@ class Settings(BaseSettings):
 
     @property
     def model_path(self) -> Path:
-        return self._resolve_model_path(self.yolo_model_path, "best.pt")
+        return self._resolve_model_path(self.yolo_model_path, "defect_detector.pt")
 
     @property
     def dispense_model_path(self) -> Path:
-        return self._resolve_model_path(self.yolo_dispense_path, "best_dispense.pt")
+        return self._resolve_model_path(self.yolo_dispense_path, "pattern_classifier.pt")
 
     @property
-    def pcb_aoi_model_path(self) -> Path:
-        return self._resolve_model_path(self.yolo_pcb_aoi_path, "best_pcb_aoi.pt")
+    def pcb_aoi_model_path(self) -> Path | None:
+        """Returns None when no PCB-AOI model is configured."""
+        if not self.yolo_pcb_aoi_path:
+            return None
+        p = self._resolve_model_path(self.yolo_pcb_aoi_path, "")
+        return p if p.exists() else None
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -1,0 +1,25 @@
+{
+  "um_per_px": 3.125,
+  "img_size": 640,
+  "conf_threshold": 0.55,
+  "defect_classes": [
+    "Missing_Void",
+    "Oversized",
+    "Undersized",
+    "Irregular_Shape",
+    "Excessive_Spreading"
+  ],
+  "patterns": [
+    "micro_bump",
+    "micro_lines",
+    "micro_dam",
+    "micro_cavity"
+  ],
+  "nominal_spec_um": {
+    "micro_bump": 100.0,
+    "micro_lines": 81.25,
+    "micro_dam": 40.625,
+    "micro_cavity": 125.0
+  },
+  "tolerance": 0.3
+}
