@@ -675,14 +675,18 @@ function MiniDashboard() {
 }
 
 // ─── Live Data: SDG 9 Environmental & Social Impact Dashboard ──────────────────
-function LiveESGImpact() {
+function LiveESGImpact({ userEmail }: { userEmail?: string }) {
   const [metrics, setMetrics] = useState({ total_scans: 0, defects_intercepted: 0 })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
-        const res = await fetch('/api/dashboard/metrics')
+        const url = userEmail
+          ? `/api/dashboard/metrics?user_email=${encodeURIComponent(userEmail)}`
+          : '/api/dashboard/metrics'
+
+        const res = await fetch(url)
         if (res.ok) {
           const data = await res.json()
           setMetrics(data)
@@ -710,7 +714,7 @@ function LiveESGImpact() {
           Real-time
         </span>
       </div>
-      
+
       {loading ? (
         <div style={{ fontSize: 12, color: '#64748B', padding: '20px 0', textAlign: 'center' }}>
           Syncing with database...
@@ -771,20 +775,20 @@ function MiniROISimulator() {
           <span style={{ fontSize: 11, fontWeight: 600, color: '#1F2033' }}>Hourly Throughput</span>
           <span style={{ fontSize: 11, fontWeight: 700, color: '#D66A2C' }}>{throughput} boards</span>
         </div>
-        <input 
-          type="range" min="100" max="2000" step="100" value={throughput} 
+        <input
+          type="range" min="100" max="2000" step="100" value={throughput}
           onChange={(e) => setThroughput(Number(e.target.value))}
-          style={{ width: '100%', accentColor: '#D66A2C' }} 
+          style={{ width: '100%', accentColor: '#D66A2C' }}
         />
 
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, marginTop: 12 }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: '#1F2033' }}>Current Defect Rate</span>
           <span style={{ fontSize: 11, fontWeight: 700, color: '#D66A2C' }}>{defectRate}%</span>
         </div>
-        <input 
-          type="range" min="0.1" max="5.0" step="0.1" value={defectRate} 
+        <input
+          type="range" min="0.1" max="5.0" step="0.1" value={defectRate}
           onChange={(e) => setDefectRate(Number(e.target.value))}
-          style={{ width: '100%', accentColor: '#D66A2C' }} 
+          style={{ width: '100%', accentColor: '#D66A2C' }}
         />
       </div>
 
@@ -807,39 +811,39 @@ function MiniPatternsMockup() {
       <div style={{ fontSize: 10, fontWeight: 800, color: '#0B6873', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
         Advanced Pattern Recognition
       </div>
-      
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
         {/* Micro-Bump */}
         <div style={{ background: 'white', borderRadius: 8, padding: 12, border: '1px solid rgba(11,104,115,0.1)' }}>
           <div style={{ width: '100%', aspectRatio: '1', background: '#374151', borderRadius: 4, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4, padding: 8, marginBottom: 8 }}>
-             {Array.from({length: 25}).map((_, i) => <div key={i} style={{ background: '#38BDF8', borderRadius: '50%', width: '100%', height: '100%' }} />)}
+            {Array.from({ length: 25 }).map((_, i) => <div key={i} style={{ background: '#38BDF8', borderRadius: '50%', width: '100%', height: '100%' }} />)}
           </div>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#1F2033', textAlign: 'center' }}>Micro-Bump</div>
           <div style={{ fontSize: 9, color: '#64748B', textAlign: 'center' }}>(BGA/Dotting)</div>
         </div>
-        
+
         {/* Micro-Lines */}
         <div style={{ background: 'white', borderRadius: 8, padding: 12, border: '1px solid rgba(11,104,115,0.1)' }}>
           <div style={{ width: '100%', aspectRatio: '1', background: '#374151', borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 8px', marginBottom: 8 }}>
-             {Array.from({length: 6}).map((_, i) => <div key={i} style={{ background: '#38BDF8', height: 4, borderRadius: 2, width: '100%', opacity: 0.8 }} />)}
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} style={{ background: '#38BDF8', height: 4, borderRadius: 2, width: '100%', opacity: 0.8 }} />)}
           </div>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#1F2033', textAlign: 'center' }}>Micro-Lines</div>
           <div style={{ fontSize: 9, color: '#64748B', textAlign: 'center' }}>(Fine Streaks)</div>
         </div>
-        
+
         {/* Micro-DAM */}
         <div style={{ background: 'white', borderRadius: 8, padding: 12, border: '1px solid rgba(11,104,115,0.1)' }}>
           <div style={{ width: '100%', aspectRatio: '1', background: '#374151', borderRadius: 4, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, padding: 8, marginBottom: 8 }}>
-             {Array.from({length: 9}).map((_, i) => <div key={i} style={{ border: '2px solid #38BDF8', borderRadius: 2, width: '100%', height: '100%', opacity: 0.9 }} />)}
+            {Array.from({ length: 9 }).map((_, i) => <div key={i} style={{ border: '2px solid #38BDF8', borderRadius: 2, width: '100%', height: '100%', opacity: 0.9 }} />)}
           </div>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#1F2033', textAlign: 'center' }}>Micro-DAM</div>
           <div style={{ fontSize: 9, color: '#64748B', textAlign: 'center' }}>(High-Standoff)</div>
         </div>
-        
+
         {/* Micro-Cavity */}
         <div style={{ background: 'white', borderRadius: 8, padding: 12, border: '1px solid rgba(11,104,115,0.1)' }}>
           <div style={{ width: '100%', aspectRatio: '1', background: '#374151', borderRadius: 4, display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 2, padding: 8, marginBottom: 8 }}>
-             {Array.from({length: 64}).map((_, i) => <div key={i} style={{ background: '#38BDF8', width: '100%', height: '100%', opacity: 0.85 }} />)}
+            {Array.from({ length: 64 }).map((_, i) => <div key={i} style={{ background: '#38BDF8', width: '100%', height: '100%', opacity: 0.85 }} />)}
           </div>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#1F2033', textAlign: 'center' }}>Micro-Cavity</div>
           <div style={{ fontSize: 9, color: '#64748B', textAlign: 'center' }}>(Uneven Surface)</div>
@@ -876,9 +880,9 @@ function MiniHistory({ userEmail }: { userEmail?: string }) {
 
   // Decide what to render
   const labels = data?.labels ?? ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']
-  const vals   = data?.values ?? [0, 0, 0, 0, 0, 0]
-  const max    = Math.max(...vals, 1)   // avoid ÷0
-  const trend  = data?.trend_pct
+  const vals = data?.values ?? [0, 0, 0, 0, 0, 0]
+  const max = Math.max(...vals, 1)   // avoid ÷0
+  const trend = data?.trend_pct
 
   const trendStr = trend === null || trend === undefined
     ? null
@@ -1253,7 +1257,7 @@ export default function App() {
               imgSrc="https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&h=800&fit=crop&auto=format"
               imgAlt="Printed circuit board on a production line"
               bgColor="#F7F6FB"
-              MockupComponent={LiveESGImpact}
+              MockupComponent={() => <LiveESGImpact userEmail={user?.email} />}
             />
 
             <FeatureSection
