@@ -205,6 +205,24 @@ export async function fetchHistoryAnalytics(
   return res.json()
 }
 
+export type CaseVolumeData = {
+  labels: string[]   // e.g. ["Apr","May","Jun","Jul","Aug","Sep"]
+  values: number[]   // scan counts per month
+  trend_pct: number | null  // % change vs previous month, null if no prior data
+  current_month_total: number
+}
+
+export async function fetchRealtimeCaseVolume(
+  userEmail?: string,
+  monthsBack = 6,
+): Promise<CaseVolumeData> {
+  const params = new URLSearchParams({ months_back: String(monthsBack) })
+  if (userEmail) params.set("user_email", userEmail)
+  const res = await fetch(`${API_BASE}/realtime/case-volume?${params.toString()}`)
+  if (!res.ok) throw new Error(await readError(res))
+  return res.json()
+}
+
 export async function fetchCase(sessionId: string): Promise<HistoryCaseDetail> {
   const res = await fetch(`${API_BASE}/cases/${sessionId}`)
   if (!res.ok) throw new Error(await readError(res))

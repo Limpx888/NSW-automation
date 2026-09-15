@@ -416,7 +416,7 @@ export default function LearningDatabase({
 
   useEffect(() => {
     void load()
-    fetchCloudStatus().then(setCloudStatus).catch(() => {})
+    fetchCloudStatus().then(setCloudStatus).catch(() => { })
   }, [])
 
   const addCase = async () => {
@@ -541,9 +541,9 @@ export default function LearningDatabase({
 
         {/* ── Analytics tab ── */}
         {activeTab === "analytics" && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            {/* Cause bar chart */}
-            <div style={card}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+
+            <div style={{ ...card, gridColumn: "span 1" }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: DARK, marginBottom: 4 }}>Root Cause Distribution</div>
               <div style={{ fontSize: 11, color: MUTED, marginBottom: 16 }}>How frequently each cause type appears</div>
               {loading ? <div style={{ color: MUTED, fontSize: 13 }}>Loading…</div> : stats?.cause_breakdown.length ? (
@@ -551,8 +551,7 @@ export default function LearningDatabase({
               ) : <div style={{ color: MUTED, fontSize: 13 }}>No data yet</div>}
             </div>
 
-            {/* Donut chart */}
-            <div style={{ ...card, display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ ...card, display: "flex", flexDirection: "column", alignItems: "center", gridColumn: "span 3" }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: DARK, marginBottom: 4, alignSelf: "flex-start" }}>Cause Share</div>
               <div style={{ fontSize: 11, color: MUTED, marginBottom: 16, alignSelf: "flex-start" }}>Proportional breakdown of all confirmed causes</div>
               {loading ? <div style={{ color: MUTED, fontSize: 13 }}>Loading…</div> : (
@@ -560,8 +559,7 @@ export default function LearningDatabase({
               )}
             </div>
 
-            {/* Resolution progress */}
-            <div style={card}>
+            <div style={{ ...card, gridColumn: "span 1" }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: DARK, marginBottom: 4 }}>Resolution Progress</div>
               <div style={{ fontSize: 11, color: MUTED, marginBottom: 16 }}>Ratio of confirmed fixes to total cases</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -582,8 +580,11 @@ export default function LearningDatabase({
               </div>
             </div>
 
-            {/* Intelligence proof */}
-            {stats && <IntelligenceProof stats={stats} cases={cases} />}
+            {stats && (
+              <div style={{ gridColumn: "span 3" }}>
+                <IntelligenceProof stats={stats} cases={cases} />
+              </div>
+            )}
           </div>
         )}
 

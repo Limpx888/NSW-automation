@@ -8,6 +8,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
+import sqlite3
 import pandas as pd
 import joblib
 from fastapi import Form
@@ -393,6 +394,35 @@ async def run_diagnostics(
     }
 
 
+@app.get("/api/dashboard/metrics")
+@app.get("/dashboard/metrics")
+def get_dashboard_metrics():
+    # Point this to your SQLite database file path
+    db_path = history.DEFAULT_DB
+    
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Get total scan count
+            cursor.execute("SELECT COUNT(*) FROM scan_cases")
+            total_scans = cursor.fetchone()[0] or 0
+            
+            # Get intercepted defects count (records where defect_label is not 'pass')
+            cursor.execute("SELECT COUNT(*) FROM scan_cases WHERE defect_label != 'pass' AND defect_label IS NOT NULL")
+            defects_intercepted = cursor.fetchone()[0] or 0
+            
+    except Exception as e:
+        print(f"Database error: {e}")
+        total_scans = 0
+        defects_intercepted = 0
+
+    return {
+        "total_scans": total_scans,
+        "defects_intercepted": defects_intercepted,
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -649,6 +679,19 @@ def history_analytics(
     email = user_email.strip() if user_email and user_email.strip() else None
     return history.get_history_analytics(user_email=email, year=year, month=month)
 
+
+@app.get("/realtime/case-volume")
+def realtime_case_volume(
+    user_email: str | None = None,
+    months_back: int = 6,
+) -> dict[str, Any]:
+    """
+    Real-time monthly scan volume for the last `months_back` months.
+    Polled by the frontend every 10s to keep the MiniHistory chart live.
+    Uses a direct SQL GROUP BY aggregation — no full table scan.
+    """
+    email = user_email.strip() if user_email and user_email.strip() else None
+    return history.get_monthly_volume(user_email=email, months_back=max(2, min(months_back, 24)))
 
 
 @app.get("/cases/{session_id}")

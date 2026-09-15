@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react"
+import { useEffect, useRef, useState, useCallback, type CSSProperties } from "react"
 import {
   Calendar,
   ChevronLeft,
@@ -70,35 +70,50 @@ const MONTH_NAMES = [
 // 1. HISTORY VIEW: Dedicated to Analytics, Defect Breakdown & Trends (Image 1)
 // ============================================================================
 export function HistoryView({ onBack, userEmail }: { onBack: () => void; userEmail?: string }) {
+  const AUTO_REFRESH_MS = 30_000   // 30-second polling
   const [viewMode, setViewMode] = useState<"monthly" | "annual">("monthly")
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1)
   const [analytics, setAnalytics] = useState<HistoryAnalytics | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
+  const [refreshPulse, setRefreshPulse] = useState(false)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const loadAnalytics = async () => {
+  const loadAnalytics = useCallback(async (silent = false) => {
     if (!userEmail) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     setError("")
     try {
       const yr = selectedYear
       const mo = viewMode === "monthly" ? selectedMonth : undefined
       const res = await fetchHistoryAnalytics(userEmail, yr, mo)
       setAnalytics(res)
+      setLastRefreshed(new Date())
+      // Brief flash to signal new data arrived
+      setRefreshPulse(true)
+      setTimeout(() => setRefreshPulse(false), 600)
       if (res.available_years.length > 0 && !res.available_years.includes(selectedYear)) {
         setSelectedYear(res.available_years[0])
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load history analytics")
+      if (!silent) setError(err instanceof Error ? err.message : "Failed to load history analytics")
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
-  }
+  }, [userEmail, viewMode, selectedYear, selectedMonth])
 
+  // Initial load + dependency-driven reload
   useEffect(() => {
     void loadAnalytics()
-  }, [userEmail, viewMode, selectedYear, selectedMonth])
+  }, [loadAnalytics])
+
+  // Auto-refresh every 30 s (silent — no spinner flicker)
+  useEffect(() => {
+    pollRef.current = setInterval(() => { void loadAnalytics(true) }, AUTO_REFRESH_MS)
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [loadAnalytics])
 
   const prevMonth = () => {
     if (selectedMonth === 1) {
@@ -199,7 +214,21 @@ export function HistoryView({ onBack, userEmail }: { onBack: () => void; userEma
             </p>
           </div>
 
+          {/* Auto-refresh status bar + Manual Refresh */}
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            {/* Live auto-refresh badge */}
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 999, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)" }}>
+              <span style={{
+                display: "inline-block", width: 7, height: 7, borderRadius: "50%",
+                background: "#10B981", animation: "pulse-dot 2s infinite",
+              }} />
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#059669" }}>AUTO-REFRESH ON</span>
+              {lastRefreshed && (
+                <span style={{ fontSize: 10, color: "rgba(5,150,105,0.6)", marginLeft: 2 }}>
+                  · {lastRefreshed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </span>
+              )}
+            </div>
             {/* View Mode Toggle: Monthly / Annual */}
             <div style={{ display: "inline-flex", background: "#E2E8F0", borderRadius: 999, padding: 3 }}>
               <button
@@ -359,8 +388,18 @@ export function HistoryView({ onBack, userEmail }: { onBack: () => void; userEma
           </div>
         )}
 
-        {/* 2. Analytics & Top Defect Summary (First Image Content) */}
-        <div style={{ ...panel, padding: "24px 28px" }}>
+        {/* 2. Analytics & Top Defect Summary */}
+        <div
+          style={{
+            ...panel,
+            padding: "24px 28px",
+            transition: "box-shadow 0.4s ease, border-color 0.4s ease",
+            boxShadow: refreshPulse
+              ? "0 0 0 2px rgba(16,185,129,0.5), 0 16px 40px rgba(16,42,67,0.06)"
+              : undefined,
+            borderColor: refreshPulse ? "rgba(16,185,129,0.4)" : undefined,
+          }}
+        >
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20 }}>
             {/* Top Defect Detected Card */}
             <div
@@ -501,6 +540,7 @@ export function HistoryView({ onBack, userEmail }: { onBack: () => void; userEma
           </div>
         </div>
       </div>
+      <style>{`@keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.85)} }`}</style>
     </section>
   )
 }

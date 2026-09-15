@@ -427,3 +427,85 @@ def get_history_analytics(
         "available_months": available_months,
     }
 
+
+def get_monthly_volume(
+    user_email: str | None = None,
+    months_back: int = 6,
+    db_path: Path | None = None,
+) -> dict[str, Any]:
+    """
+    Returns a real-time monthly scan count for the last `months_back` months.
+    Uses direct SQL GROUP BY so it stays fast even with thousands of rows.
+    """
+    conn = connect(db_path)
+
+    # Build the date range: first day of the oldest target month
+    from datetime import date, timedelta
+    import calendar
+
+    today = date.today()
+    # Compute the first day of the month that is `months_back - 1` months ago
+    year = today.year
+    month = today.month
+    # Step back (months_back - 1) months
+    total_months = year * 12 + month - 1  # 0-indexed month count
+    start_total = total_months - (months_back - 1)
+    start_year = start_total // 12
+    start_month = start_total % 12 + 1
+    start_date = f"{start_year}-{start_month:02d}-01"
+
+    where_clause = "WHERE created_at >= ?"
+    params: list[Any] = [start_date]
+    if user_email and user_email.strip():
+        where_clause += " AND user_email = ?"
+        params.append(user_email.strip())
+
+    rows = conn.execute(
+        f"""
+        SELECT
+            strftime('%Y-%m', created_at) AS month_key,
+            COUNT(*) AS scan_count
+        FROM scan_cases
+        {where_clause}
+        GROUP BY month_key
+        ORDER BY month_key ASC
+        """,
+        params,
+    ).fetchall()
+    conn.close()
+
+    # Build a full map from the DB results
+    db_map: dict[str, int] = {r["month_key"]: r["scan_count"] for r in rows}
+
+    # Fill in all months (including zeros for gaps)
+    month_labels: list[str] = []
+    month_values: list[int] = []
+    for i in range(months_back):
+        offset = total_months - (months_back - 1) + i
+        y = offset // 12
+        m = offset % 12 + 1
+        key = f"{y}-{m:02d}"
+        short_label = date(y, m, 1).strftime("%b")
+        month_labels.append(short_label)
+        month_values.append(db_map.get(key, 0))
+
+    # Trend: compare last month to the month before
+    trend_pct: float | None = None
+    if len(month_values) >= 2:
+        prev = month_values[-2]
+        curr = month_values[-1]
+        if prev > 0:
+            trend_pct = round((curr - prev) / prev * 100, 1)
+        elif curr > 0:
+            trend_pct = 100.0
+
+    # Also return a live total for the current month
+    current_month_total = month_values[-1] if month_values else 0
+
+    return {
+        "labels": month_labels,
+        "values": month_values,
+        "trend_pct": trend_pct,
+        "current_month_total": current_month_total,
+    }
+

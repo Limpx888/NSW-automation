@@ -5,8 +5,11 @@ import { HistoryView, ReportsView } from './CaseWorkspace'
 import LearningDatabase from './LearningDatabase'
 import AuthModal from './AuthModal'
 import { supabase, syncUserProfile, isEmailRegistered, type UserProfile } from './lib/supabase'
+import { fetchRealtimeCaseVolume, type CaseVolumeData } from './lib/api'
 import logoImg from './assets/logo.png'
 import heroVideo from './assets/hero-video.mp4'
+import machineVisionImg from './assets/machine-vision-frame.jpg'
+import smartFactoryRoiImg from './assets/smart-factory-roi.jpg'
 
 // ─── Global scroll state ───────────────────────────────────────────────────────
 function useScrollY() {
@@ -684,6 +687,132 @@ function MiniDashboard() {
   )
 }
 
+// ─── Live Data: SDG 9 Environmental & Social Impact Dashboard ──────────────────
+function LiveESGImpact() {
+  const [metrics, setMetrics] = useState({ total_scans: 0, defects_intercepted: 0 })
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const res = await fetch('/api/dashboard/metrics')
+        if (res.ok) {
+          const data = await res.json()
+          setMetrics(data)
+        }
+      } catch (error) {
+        console.error("Failed to fetch metrics", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchMetrics()
+  }, [])
+
+  // Environmental impact logic: Assume each PCB saves 2g of paste and reduces 0.03kg of CO2 emissions
+  const pasteSavedKg = (metrics.defects_intercepted * 2) / 1000
+  const carbonSavedKg = metrics.defects_intercepted * 0.03
+
+  return (
+    <div style={{ padding: 16, background: '#F7F6FB' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          SDG 9: Live Sustainability Impact
+        </div>
+        <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: 'rgba(5,150,105,0.1)', color: '#059669' }}>
+          Real-time
+        </span>
+      </div>
+      
+      {loading ? (
+        <div style={{ fontSize: 12, color: '#64748B', padding: '20px 0', textAlign: 'center' }}>
+          Syncing with database...
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+            <div style={{ background: 'white', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(16,185,129,0.2)' }}>
+              <div style={{ fontSize: 10, color: 'rgba(31,32,51,0.55)', marginBottom: 4 }}>Defects Intercepted</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#1F2033' }}>
+                {metrics.defects_intercepted.toLocaleString()}
+              </div>
+            </div>
+            <div style={{ background: 'white', borderRadius: 10, padding: '10px 12px', border: '1px solid rgba(16,185,129,0.2)' }}>
+              <div style={{ fontSize: 10, color: 'rgba(31,32,51,0.55)', marginBottom: 4 }}>Total Scans</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#1F2033' }}>
+                {metrics.total_scans.toLocaleString()}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: 'white', borderRadius: 10, padding: '12px', border: '1px solid rgba(16,185,129,0.2)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(31,32,51,0.7)', marginBottom: 8 }}>Materials & Emissions Prevented</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: 'rgba(31,32,51,0.55)' }}>Solder Paste Saved</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#059669' }}>↓ {pasteSavedKg.toFixed(2)} kg</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: 'rgba(31,32,51,0.55)' }}>Carbon Footprint (CO₂)</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#059669' }}>↓ {carbonSavedKg.toFixed(2)} kg</span>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── Interactive Mockup: ROI & Business Cost Calculator ────────────────────────
+function MiniROISimulator() {
+  const [throughput, setThroughput] = useState(500)
+  const [defectRate, setDefectRate] = useState(1.5)
+  const costPerBoard = 15 // Assuming each scrapped PCB costs RM 15
+
+  // Monthly scrap cost = Capacity * Defect rate * 24 hrs * 30 days * Cost per board
+  const monthlyScrapCost = (throughput * (defectRate / 100) * 24 * 30 * costPerBoard)
+  // Assuming DARA intercepts 90% of them early
+  const monthlySavings = monthlyScrapCost * 0.9
+
+  return (
+    <div style={{ padding: 16, background: '#F7F6FB' }}>
+      <div style={{ fontSize: 10, fontWeight: 800, color: '#D66A2C', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+        Commercial ROI Calculator
+      </div>
+
+      <div style={{ background: 'white', borderRadius: 10, padding: '12px', border: '1px solid rgba(214,106,44,0.2)', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#1F2033' }}>Hourly Throughput</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#D66A2C' }}>{throughput} boards</span>
+        </div>
+        <input 
+          type="range" min="100" max="2000" step="100" value={throughput} 
+          onChange={(e) => setThroughput(Number(e.target.value))}
+          style={{ width: '100%', accentColor: '#D66A2C' }} 
+        />
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, marginTop: 12 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#1F2033' }}>Current Defect Rate</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#D66A2C' }}>{defectRate}%</span>
+        </div>
+        <input 
+          type="range" min="0.1" max="5.0" step="0.1" value={defectRate} 
+          onChange={(e) => setDefectRate(Number(e.target.value))}
+          style={{ width: '100%', accentColor: '#D66A2C' }} 
+        />
+      </div>
+
+      <div style={{ background: '#0B192C', borderRadius: 10, padding: '16px', textAlign: 'center' }}>
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+          Projected Monthly Savings
+        </div>
+        <div style={{ fontSize: 24, fontWeight: 900, color: '#10B981', letterSpacing: '-0.02em' }}>
+          RM {monthlySavings.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Mockup: AI Scan queue ─────────────────────────────────────────────────────
 function MiniAIScan() {
   return (
@@ -737,25 +866,89 @@ function MiniReport() {
   )
 }
 
-// ─── Mockup: History bar chart ─────────────────────────────────────────────────
-function MiniHistory() {
-  const months = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']
-  const vals = [28, 35, 22, 41, 30, 17]
-  const max = Math.max(...vals)
+// ─── Live History bar chart — polls /api/realtime/case-volume every 10 s ────────
+function MiniHistory({ userEmail }: { userEmail?: string }) {
+  const POLL_INTERVAL = 10_000
+  const [data, setData] = useState<CaseVolumeData | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const poll = useCallback(async () => {
+    try {
+      const res = await fetchRealtimeCaseVolume(userEmail, 6)
+      setData(res)
+      setLastUpdated(new Date())
+    } catch {
+      // silently keep showing previous data
+    }
+  }, [userEmail])
+
+  useEffect(() => {
+    void poll()
+    timerRef.current = setInterval(() => { void poll() }, POLL_INTERVAL)
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [poll])
+
+  // Decide what to render
+  const labels = data?.labels ?? ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']
+  const vals   = data?.values ?? [0, 0, 0, 0, 0, 0]
+  const max    = Math.max(...vals, 1)   // avoid ÷0
+  const trend  = data?.trend_pct
+
+  const trendStr = trend === null || trend === undefined
+    ? null
+    : trend >= 0
+      ? `↑ +${trend}%`
+      : `↓ ${trend}%`
+  const trendColor = !trendStr ? '#64748B' : trend! >= 0 ? '#D66A2C' : '#10B981'
+
   return (
     <div style={{ padding: 16 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(31,32,51,0.45)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Monthly Case Volume</div>
+      {/* Header row with live badge */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(31,32,51,0.45)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Monthly Case Volume</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          {/* Blinking green live dot */}
+          <span style={{
+            display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+            background: '#10B981',
+            boxShadow: '0 0 0 2px rgba(16,185,129,0.25)',
+            animation: 'pulse-live 2s infinite',
+          }} />
+          <span style={{ fontSize: 9, fontWeight: 700, color: '#10B981' }}>LIVE</span>
+        </div>
+      </div>
+
+      {/* Bar chart */}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 60, marginBottom: 4 }}>
-        {months.map((m, i) => (
+        {labels.map((m, i) => (
           <div key={m} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-            <div style={{ width: '100%', borderRadius: '4px 4px 0 0', height: `${(vals[i] / max) * 52}px`, background: i === months.length - 1 ? '#D66A2C' : '#B7C9C6', transition: 'background 0.2s' }} />
+            <div style={{
+              width: '100%',
+              borderRadius: '4px 4px 0 0',
+              height: `${(vals[i] / max) * 52}px`,
+              minHeight: vals[i] > 0 ? 4 : 0,
+              background: i === labels.length - 1 ? '#D66A2C' : '#B7C9C6',
+              transition: 'height 0.6s cubic-bezier(0.34,1.56,0.64,1), background 0.3s',
+            }} />
             <span style={{ fontSize: 9, color: 'rgba(31,32,51,0.4)' }}>{m}</span>
           </div>
         ))}
       </div>
-      <div style={{ marginTop: 8, fontSize: 10, color: 'rgba(31,32,51,0.4)', textAlign: 'right' }}>
-        <span style={{ color: '#0B6873', fontWeight: 700 }}>↓ 43%</span> vs Aug peak
+
+      {/* Trend + last-updated footer */}
+      <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 9, color: 'rgba(31,32,51,0.28)' }}>
+          {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Syncing…'}
+        </span>
+        {trendStr && (
+          <span style={{ fontSize: 10, color: trendColor, fontWeight: 700 }}>
+            {trendStr} vs prev
+          </span>
+        )}
       </div>
+
+      <style>{`@keyframes pulse-live { 0%,100%{opacity:1} 50%{opacity:0.35} }`}</style>
     </div>
   )
 }
@@ -1061,7 +1254,7 @@ export default function App() {
               imgSrc="https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&h=800&fit=crop&auto=format"
               imgAlt="Printed circuit board on a production line"
               bgColor="#F7F6FB"
-              MockupComponent={MiniDashboard}
+              MockupComponent={LiveESGImpact}
             />
 
             <FeatureSection
@@ -1073,8 +1266,8 @@ export default function App() {
                 'Confidence scoring with explainable inspection overlays per flag',
                 '98.7% accuracy across 14 solder-paste defect classes',
               ]}
-              imgSrc="https://images.unsplash.com/photo-1563770660941-10a04f7d7f08?w=1200&h=800&fit=crop&auto=format"
-              imgAlt="Electronics assembly line inspection"
+              imgSrc={machineVisionImg}
+              imgAlt="Machine vision detection with neon HUD overlays on printed circuit board"
               bgColor="white"
               flipped
               MockupComponent={MiniAIScan}
@@ -1108,7 +1301,22 @@ export default function App() {
               imgAlt="Engineer monitoring an electronics production line"
               bgColor="white"
               flipped
-              MockupComponent={MiniHistory}
+              MockupComponent={() => <MiniHistory userEmail={user?.email} />}
+            />
+
+            <FeatureSection
+              eyebrow="Commercial Value"
+              heading={<>Instant ROI for<br />production lines</>}
+              body="DARA doesn't just find defects—it stops them from becoming expensive scrap. Use our live calculator to see how much your factory can save."
+              bullets={[
+                'Reduces rework labor and scrapped PCB materials',
+                'Payback period typically under 3 months',
+                'Aligns with SDG 9 sustainable industrialization goals',
+              ]}
+              imgSrc={smartFactoryRoiImg}
+              imgAlt="Smart factory interior with digital eco data streams"
+              bgColor="#F7F6FB"
+              MockupComponent={MiniROISimulator}
             />
           </div>
 

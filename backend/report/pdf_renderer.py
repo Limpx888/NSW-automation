@@ -30,10 +30,10 @@ def render_pdf(data: ReportData) -> bytes:
 
         return HTML(string=html_str, base_url=str(TEMPLATE_DIR)).write_pdf()
     except Exception:
-        pass
+        pass 
 
     try:
-        return _render_pdf_fallback(data)
+        return _render_pdf_fallback(data)  
     except Exception:
         return _render_pdf_reportlab(data)
 
