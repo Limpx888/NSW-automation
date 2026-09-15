@@ -533,23 +533,6 @@ function DashboardMockup() {
 }
 
 // ─── Logo Row ──────────────────────────────────────────────────────────────────
-function LogoRow() {
-  return (
-    <section style={{ background: 'white', padding: '56px 40px' }}>
-      <p style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', color: 'rgba(31,32,51,0.32)', marginBottom: 32, textTransform: 'uppercase' }}>
-        Built for electronics manufacturing lines
-      </p>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: '8px 40px', maxWidth: 800, margin: '0 auto' }}>
-        {['StencilLine', 'BoardWorks', 'FluxCore', 'Precision SMT', 'CopperPeak', 'Assembly Lab'].map(name => (
-          <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            <div style={{ width: 20, height: 20, borderRadius: 5, background: '#D1D5DB' }} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#9CA3AF', letterSpacing: '-0.02em' }}>{name}</span>
-          </div>
-        ))}
-      </div>
-    </section>
-  )
-}
 
 // ─── Parallax Feature Section — full-bleed photo bg + floating card ────────────
 interface FeatureSectionProps {
@@ -813,58 +796,56 @@ function MiniROISimulator() {
   )
 }
 
-// ─── Mockup: AI Scan queue ─────────────────────────────────────────────────────
-function MiniAIScan() {
+// ─── Interactive Mockup: Multi-Pattern Scanning ────────────────────────────────
+function MiniPatternsMockup() {
   return (
-    <div style={{ padding: 16 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(31,32,51,0.45)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Vision Inspection Queue</div>
-      {[
-        { id: 'PCB-20948', type: 'Insufficient paste', flag: 'error', conf: 94 },
-        { id: 'PCB-20947', type: 'Volume within tolerance', flag: 'pass', conf: 99 },
-        { id: 'PCB-20946', type: 'Bridging risk detected', flag: 'warn', conf: 87 },
-      ].map(item => (
-        <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F7F6FB', borderRadius: 10, padding: '8px 12px', marginBottom: 6, border: '1px solid rgba(79,70,229,0.07)' }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#0B6873' }}>{item.id}</div>
-            <div style={{ fontSize: 10, color: 'rgba(31,32,51,0.45)' }}>{item.type}</div>
-          </div>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: item.flag === 'pass' ? 'rgba(16,185,129,0.1)' : item.flag === 'warn' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)', color: item.flag === 'pass' ? '#059669' : item.flag === 'warn' ? '#D97706' : '#DC2626' }}>
-            {item.flag === 'pass' ? 'Pass' : item.flag === 'warn' ? 'Review' : 'Flag'}
-          </span>
-        </div>
-      ))}
-      <div style={{ marginTop: 8, height: 4, borderRadius: 99, background: '#D5E3E0' }}>
-        <div style={{ height: 4, borderRadius: 99, width: '73%', background: '#0B6873' }} />
+    <div style={{ padding: 16, background: '#F7F6FB' }}>
+      <div style={{ fontSize: 10, fontWeight: 800, color: '#0B6873', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+        Advanced Pattern Recognition
       </div>
-      <div style={{ fontSize: 10, color: 'rgba(31,32,51,0.35)', marginTop: 4 }}>73 of 100 scanned</div>
+      
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+        {/* Micro-Bump */}
+        <div style={{ background: 'white', borderRadius: 8, padding: 12, border: '1px solid rgba(11,104,115,0.1)' }}>
+          <div style={{ width: '100%', aspectRatio: '1', background: '#374151', borderRadius: 4, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4, padding: 8, marginBottom: 8 }}>
+             {Array.from({length: 25}).map((_, i) => <div key={i} style={{ background: '#38BDF8', borderRadius: '50%', width: '100%', height: '100%' }} />)}
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#1F2033', textAlign: 'center' }}>Micro-Bump</div>
+          <div style={{ fontSize: 9, color: '#64748B', textAlign: 'center' }}>(BGA/Dotting)</div>
+        </div>
+        
+        {/* Micro-Lines */}
+        <div style={{ background: 'white', borderRadius: 8, padding: 12, border: '1px solid rgba(11,104,115,0.1)' }}>
+          <div style={{ width: '100%', aspectRatio: '1', background: '#374151', borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 8px', marginBottom: 8 }}>
+             {Array.from({length: 6}).map((_, i) => <div key={i} style={{ background: '#38BDF8', height: 4, borderRadius: 2, width: '100%', opacity: 0.8 }} />)}
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#1F2033', textAlign: 'center' }}>Micro-Lines</div>
+          <div style={{ fontSize: 9, color: '#64748B', textAlign: 'center' }}>(Fine Streaks)</div>
+        </div>
+        
+        {/* Micro-DAM */}
+        <div style={{ background: 'white', borderRadius: 8, padding: 12, border: '1px solid rgba(11,104,115,0.1)' }}>
+          <div style={{ width: '100%', aspectRatio: '1', background: '#374151', borderRadius: 4, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, padding: 8, marginBottom: 8 }}>
+             {Array.from({length: 9}).map((_, i) => <div key={i} style={{ border: '2px solid #38BDF8', borderRadius: 2, width: '100%', height: '100%', opacity: 0.9 }} />)}
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#1F2033', textAlign: 'center' }}>Micro-DAM</div>
+          <div style={{ fontSize: 9, color: '#64748B', textAlign: 'center' }}>(High-Standoff)</div>
+        </div>
+        
+        {/* Micro-Cavity */}
+        <div style={{ background: 'white', borderRadius: 8, padding: 12, border: '1px solid rgba(11,104,115,0.1)' }}>
+          <div style={{ width: '100%', aspectRatio: '1', background: '#374151', borderRadius: 4, display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 2, padding: 8, marginBottom: 8 }}>
+             {Array.from({length: 64}).map((_, i) => <div key={i} style={{ background: '#38BDF8', width: '100%', height: '100%', opacity: 0.85 }} />)}
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#1F2033', textAlign: 'center' }}>Micro-Cavity</div>
+          <div style={{ fontSize: 9, color: '#64748B', textAlign: 'center' }}>(Uneven Surface)</div>
+        </div>
+      </div>
     </div>
   )
 }
 
-// ─── Mockup: Report approval ───────────────────────────────────────────────────
-function MiniReport() {
-  return (
-    <div style={{ padding: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(31,32,51,0.45)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>CAPA Report Sep 2026</div>
-        <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 999, background: 'rgba(11,104,115,0.1)', color: '#0B6873' }}>PDF</span>
-      </div>
-      {[
-        { name: 'S. Okafor', role: 'Quality Lead', signed: true },
-        { name: 'M. Reyes', role: 'Process Engineer', signed: true },
-        { name: 'L. Chen', role: 'Production Manager', signed: false },
-      ].map(s => (
-        <div key={s.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F7F6FB', borderRadius: 10, padding: '8px 12px', marginBottom: 6, border: '1px solid rgba(79,70,229,0.07)' }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#1F2033' }}>{s.name}</div>
-            <div style={{ fontSize: 10, color: 'rgba(31,32,51,0.4)' }}>{s.role}</div>
-          </div>
-          <span style={{ fontSize: 11, fontWeight: 700, color: s.signed ? '#10B981' : '#F59E0B' }}>{s.signed ? '✓ Signed' : 'Pending'}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
+
 
 // ─── Live History bar chart — polls /api/realtime/case-volume every 10 s ────────
 function MiniHistory({ userEmail }: { userEmail?: string }) {
@@ -1239,9 +1220,23 @@ export default function App() {
       {view === 'home' && (
         <>
           <Hero onStartScan={() => navigate('scan')} />
-          <LogoRow />
-
           <div id="inspection-flow">
+            <FeatureSection
+              eyebrow="Pattern Recognition"
+              heading={<>4 Specialized<br />Scanning Patterns</>}
+              body="DARA's latest vision models automatically adapt to your specific dispense geometry. It detects micro-bumps, fine lines, high-standoff dams, and uneven cavity fills seamlessly."
+              bullets={[
+                'Micro-Bump (BGA/Dotting) inspection for accurate dot volumes',
+                'Micro-Lines (Fine Streaks) tracing and width variation detection',
+                'Micro-DAM and Micro-Cavity profiling for complex topographies'
+              ]}
+              imgSrc="https://images.unsplash.com/photo-1555664424-778a1e5e1b48?w=1200&h=800&fit=crop&auto=format"
+              imgAlt="Close-up of a microchip and electronic patterns"
+              bgColor="white"
+              flipped
+              MockupComponent={MiniPatternsMockup}
+            />
+
             <FeatureSection
               eyebrow="Dashboard"
               heading={<>Every metric,<br />one command center</>}
@@ -1255,37 +1250,6 @@ export default function App() {
               imgAlt="Printed circuit board on a production line"
               bgColor="#F7F6FB"
               MockupComponent={LiveESGImpact}
-            />
-
-            <FeatureSection
-              eyebrow="Solder Paste Vision Scan"
-              heading={<>Machine-vision<br />detection at every stage</>}
-              body="DARA's vision engine inspects pad coverage, deposit volume, bridging, smearing, and placement alignment — flagging anomalies before boards reach rework."
-              bullets={[
-                'Sub-second detection latency on live production feeds',
-                'Confidence scoring with explainable inspection overlays per flag',
-                '98.7% accuracy across 14 solder-paste defect classes',
-              ]}
-              imgSrc={machineVisionImg}
-              imgAlt="Machine vision detection with neon HUD overlays on printed circuit board"
-              bgColor="white"
-              flipped
-              MockupComponent={MiniAIScan}
-            />
-
-            <FeatureSection
-              eyebrow="Root Cause & Reports"
-              heading={<>Audit-ready reports<br />generated in seconds</>}
-              body="From line-side quality reviews to customer-ready investigations, DARA turns defect evidence into structured, signable reports with one click."
-              bullets={[
-                'PDF, XLSX, and CSV exports for quality and production reviews',
-                '5-Why and fishbone root-cause visualizations built automatically',
-                'Corrective-action ownership and sign-off in one workflow',
-              ]}
-              imgSrc="https://images.unsplash.com/photo-1579532582937-16c108930bf6?w=1200&h=800&fit=crop&auto=format"
-              imgAlt="Quality report with manufacturing data"
-              bgColor="#F7F6FB"
-              MockupComponent={MiniReport}
             />
 
             <FeatureSection
