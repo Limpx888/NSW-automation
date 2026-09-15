@@ -477,7 +477,27 @@ export default function LearningDatabase({
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
 
         {/* Header */}
-        <button type="button" onClick={onBack} style={{ background: "none", border: "none", color: TEAL, fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16, padding: 0 }}>
+        <button 
+          onClick={onBack} 
+          style={{ 
+            background: "white", 
+            border: "1px solid #E2E8F0", 
+            color: "#475569", 
+            fontSize: 14, 
+            fontWeight: 600, 
+            cursor: "pointer", 
+            marginBottom: 40,
+            padding: "8px 16px",
+            borderRadius: 999,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
+            transition: "all 0.2s"
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = "#F8FAFC"; e.currentTarget.style.color = "#0B6873" }}
+          onMouseLeave={e => { e.currentTarget.style.background = "white"; e.currentTarget.style.color = "#475569" }}
+        >
           ← Back to dashboard
         </button>
 

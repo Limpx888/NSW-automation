@@ -472,50 +472,154 @@ export default function SolderPasteScan({ onBack, userEmail, onViewReport }: { o
   // Render Select Screen
   if (flowStep === "select") {
     return (
-      <section style={{ minHeight: "100vh", padding: "80px 20px", display: "flex", justifyContent: "center", background: "#F5F8FA" }}>
-        <div style={{ width: "100%", maxWidth: 640 }}>
-          <button onClick={onBack} style={{ background: "none", border: "none", color: "#0B6873", fontSize: 14, fontWeight: 600, cursor: "pointer", marginBottom: 30 }}>
+      <section style={{ 
+        minHeight: "100vh", 
+        padding: "100px 20px", 
+        display: "flex", 
+        justifyContent: "center", 
+        alignItems: "center",
+        background: "radial-gradient(circle at top center, #ffffff 0%, #F1F5F9 100%)",
+        position: "relative",
+        overflow: "hidden"
+      }}>
+        {/* Subtle background decorative elements */}
+        <div style={{ position: "absolute", top: "-10%", left: "-10%", width: "50%", height: "50%", background: "radial-gradient(circle, rgba(11,104,115,0.03) 0%, transparent 70%)", borderRadius: "50%" }} />
+        <div style={{ position: "absolute", bottom: "-10%", right: "-10%", width: "50%", height: "50%", background: "radial-gradient(circle, rgba(214,106,44,0.03) 0%, transparent 70%)", borderRadius: "50%" }} />
+        
+        <div style={{ width: "100%", maxWidth: 800, position: "relative", zIndex: 1, animation: "fadeInUp 0.4s ease-out" }}>
+          <button 
+            onClick={onBack} 
+            style={{ 
+              background: "white", 
+              border: "1px solid #E2E8F0", 
+              color: "#475569", 
+              fontSize: 14, 
+              fontWeight: 600, 
+              cursor: "pointer", 
+              marginBottom: 40,
+              padding: "8px 16px",
+              borderRadius: 999,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
+              transition: "all 0.2s"
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = "#F8FAFC"; e.currentTarget.style.color = "#0B6873" }}
+            onMouseLeave={e => { e.currentTarget.style.background = "white"; e.currentTarget.style.color = "#475569" }}
+          >
             ← Back to dashboard
           </button>
-          <h2 style={{ textAlign: "center", fontSize: 28, fontWeight: 800, color: "#102A43", marginBottom: 40 }}>
-            How would you like to provide the defect information?
-          </h2>
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          
+          <div style={{ textAlign: "center", marginBottom: 50 }}>
+            <h2 style={{ fontSize: 36, fontWeight: 800, color: "#102A43", marginBottom: 12, letterSpacing: "-0.02em" }}>
+              How would you like to provide the defect information?
+            </h2>
+            <p style={{ fontSize: 16, color: "#64748B", maxWidth: 500, margin: "0 auto" }}>
+              Choose whether to upload an image for automatic AI detection, or describe the problem manually.
+            </p>
+          </div>
+          
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 30 }}>
+            {/* Option 1: Upload Photo */}
             <button
               onClick={() => {
                 startNewScan()
                 setEntryType("upload")
                 setFlowStep("upload")
               }}
-              style={{ padding: "30px", borderRadius: 24, border: "2px solid #E5E7EB", background: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 20, transition: "all 0.2s" }}
+              style={{ 
+                flex: "1 1 300px", 
+                maxWidth: 360,
+                padding: "40px 30px", 
+                borderRadius: 24, 
+                border: "2px solid transparent", 
+                background: "white", 
+                cursor: "pointer", 
+                display: "flex", 
+                flexDirection: "column",
+                alignItems: "center", 
+                textAlign: "center",
+                gap: 24, 
+                boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(11, 104, 115, 0.05)",
+                transition: "all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)" 
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.transform = "translateY(-8px)"
+                e.currentTarget.style.boxShadow = "0 20px 35px -10px rgba(11, 104, 115, 0.15), 0 0 0 2px rgba(11, 104, 115, 0.2)"
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform = "none"
+                e.currentTarget.style.boxShadow = "0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(11, 104, 115, 0.05)"
+              }}
             >
-              <div style={{ width: 60, height: 60, borderRadius: "50%", background: "rgba(11,104,115,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#0B6873" }}>
-                <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <div style={{ 
+                width: 80, height: 80, borderRadius: 20, 
+                background: "linear-gradient(135deg, rgba(11,104,115,0.15) 0%, rgba(11,104,115,0.05) 100%)", 
+                display: "flex", alignItems: "center", justifyContent: "center", 
+                color: "#0B6873",
+                boxShadow: "inset 0 2px 4px rgba(255,255,255,0.5)"
+              }}>
+                <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
-              <div style={{ textAlign: "left" }}>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "#102A43", marginBottom: 6 }}>Upload a Photo</div>
-                <div style={{ fontSize: 14, color: "#6B7280" }}>Let the YOLO vision model detect the defect automatically.</div>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "#102A43", marginBottom: 8 }}>Upload a Photo</div>
+                <div style={{ fontSize: 14, color: "#64748B", lineHeight: 1.5 }}>
+                  Let the advanced YOLO vision model detect and analyze the defect automatically.
+                </div>
               </div>
             </button>
 
+            {/* Option 2: Describe */}
             <button
               onClick={() => {
                 startNewScan()
                 setEntryType("describe")
                 setFlowStep("describe")
               }}
-              style={{ padding: "30px", borderRadius: 24, border: "2px solid #E5E7EB", background: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 20, transition: "all 0.2s" }}
+              style={{ 
+                flex: "1 1 300px", 
+                maxWidth: 360,
+                padding: "40px 30px", 
+                borderRadius: 24, 
+                border: "2px solid transparent", 
+                background: "white", 
+                cursor: "pointer", 
+                display: "flex", 
+                flexDirection: "column",
+                alignItems: "center", 
+                textAlign: "center",
+                gap: 24, 
+                boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(214, 106, 44, 0.05)",
+                transition: "all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)" 
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.transform = "translateY(-8px)"
+                e.currentTarget.style.boxShadow = "0 20px 35px -10px rgba(214, 106, 44, 0.15), 0 0 0 2px rgba(214, 106, 44, 0.2)"
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform = "none"
+                e.currentTarget.style.boxShadow = "0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(214, 106, 44, 0.05)"
+              }}
             >
-              <div style={{ width: 60, height: 60, borderRadius: "50%", background: "rgba(214,106,44,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#D66A2C" }}>
-                <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <div style={{ 
+                width: 80, height: 80, borderRadius: 20, 
+                background: "linear-gradient(135deg, rgba(214,106,44,0.15) 0%, rgba(214,106,44,0.05) 100%)", 
+                display: "flex", alignItems: "center", justifyContent: "center", 
+                color: "#D66A2C",
+                boxShadow: "inset 0 2px 4px rgba(255,255,255,0.5)"
+              }}>
+                <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
               </div>
-              <div style={{ textAlign: "left" }}>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "#102A43", marginBottom: 6 }}>Describe the Problem</div>
-                <div style={{ fontSize: 14, color: "#6B7280" }}>Manually describe the issue if you don't have a clear photo.</div>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "#102A43", marginBottom: 8 }}>Describe the Problem</div>
+                <div style={{ fontSize: 14, color: "#64748B", lineHeight: 1.5 }}>
+                  Manually describe the issue if you don't have a clear photo to upload.
+                </div>
               </div>
             </button>
           </div>

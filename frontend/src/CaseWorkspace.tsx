@@ -26,11 +26,11 @@ import {
 import ReportDocument from "@/ReportDocument"
 
 const panel: CSSProperties = {
-  background: "rgba(255,255,255,0.85)",
-  borderRadius: 22,
+  background: "rgba(255,255,255,0.92)",
+  borderRadius: 20,
   padding: 24,
   border: "1px solid rgba(16,42,67,0.08)",
-  boxShadow: "0 16px 40px rgba(16,42,67,0.06)",
+  boxShadow: "0 8px 32px rgba(16,42,67,0.07)",
 }
 
 function formatWhen(iso: string) {
@@ -152,17 +152,28 @@ export function HistoryView({ onBack, userEmail }: { onBack: () => void; userEma
           type="button"
           onClick={onBack}
           style={{
-            background: "none",
-            border: "none",
-            color: "#0B6873",
-            fontSize: 13,
-            fontWeight: 700,
+            background: "white",
+            border: "1px solid #E2E8F0",
+            color: "#475569",
+            fontSize: 14,
+            fontWeight: 600,
             cursor: "pointer",
-            marginBottom: 20,
-            padding: 0,
+            marginBottom: 40,
+            padding: "8px 16px",
+            borderRadius: 999,
             display: "inline-flex",
             alignItems: "center",
-            gap: 4,
+            gap: 8,
+            boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#F8FAFC"
+            e.currentTarget.style.color = "#0B6873"
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "white"
+            e.currentTarget.style.color = "#475569"
           }}
         >
           ← Back to dashboard
@@ -695,17 +706,28 @@ export function ReportsView({
           type="button"
           onClick={onBack}
           style={{
-            background: "none",
-            border: "none",
-            color: "#0B6873",
-            fontSize: 13,
-            fontWeight: 700,
+            background: "white",
+            border: "1px solid #E2E8F0",
+            color: "#475569",
+            fontSize: 14,
+            fontWeight: 600,
             cursor: "pointer",
-            marginBottom: 20,
-            padding: 0,
+            marginBottom: 40,
+            padding: "8px 16px",
+            borderRadius: 999,
             display: "inline-flex",
             alignItems: "center",
-            gap: 4,
+            gap: 8,
+            boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#F8FAFC"
+            e.currentTarget.style.color = "#0B6873"
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "white"
+            e.currentTarget.style.color = "#475569"
           }}
         >
           ← Back to dashboard
