@@ -39,7 +39,7 @@ class ReportData(BaseModel):
     generated_at: datetime
     title: str = "AI DISPENSING DEFECT DETECTOR"
     subtitle: str = "REPORT SUMMARY"
-    brand: str = "NSW Automation"
+    brand: str = "DARA"
     footer: str = "Precision Automation Technology"
     problem_description: str
     defect: str

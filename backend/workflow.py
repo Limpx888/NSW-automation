@@ -69,7 +69,7 @@ CAUSES = {
     },
     "nozzle_blockage": {
         "name": "Nozzle Blockage",
-        "check": "Inspect tip under magnification; purge or replace nozzle. NSW: clean with IPA ultrasonic; confirm ID ≥ 5× largest powder particle.",
+        "check": "Inspect tip under magnification; purge or replace nozzle. DARA: clean with IPA ultrasonic; confirm ID ≥ 5× largest powder particle.",
     },
     "viscosity_change": {
         "name": "Material Viscosity Change",
@@ -77,7 +77,7 @@ CAUSES = {
     },
     "incorrect_parameter": {
         "name": "Incorrect Parameter",
-        "check": "Compare pressure, on-time, Z-gap, and retract against the last known-good recipe. High pressure separates flux/metal (NSW clog guide).",
+        "check": "Compare pressure, on-time, Z-gap, and retract against the last known-good recipe. High pressure separates flux/metal (DARA clog guide).",
     },
     "equipment_wear": {
         "name": "Equipment Wear",
@@ -85,7 +85,7 @@ CAUSES = {
     },
 }
 
-# Baseline weights (sum ~100) per YOLO defect — grounded in NSW / AIM / NPL guidance
+# Baseline weights (sum ~100) per YOLO defect — grounded in DARA / AIM / NPL guidance
 BASELINES: dict[str, dict[str, float]] = {
     "too_little": {
         "nozzle_blockage": 32,
@@ -197,7 +197,7 @@ REASONING_TEMPLATES = {
         "no_defect_detected": "Low priority unless operators report occasional skips.",
     },
     "nozzle_blockage": {
-        "too_little": "Partial clog restricts orifice — NSW #1 cause of under-dispense.",
+        "too_little": "Partial clog restricts orifice — DARA #1 cause of under-dispense.",
         "too_much": "Less likely; clog usually reduces volume unless pressure was raised to compensate.",
         "inconsistent_size": "Intermittent particle jam produces size scatter across dots.",
         "missing_dot": "Full or near-full tip blockage → missing deposits.",
@@ -227,7 +227,7 @@ REASONING_TEMPLATES = {
         "no_defect_detected": "Monitor booth temp/RH against the process window.",
     },
     "incorrect_parameter": {
-        "too_little": "Low pressure/time or high Z-gap prevents wetting (NSW gap guidance).",
+        "too_little": "Low pressure/time or high Z-gap prevents wetting (DARA gap guidance).",
         "too_much": "High pressure/time or low Z-gap floods the pad.",
         "inconsistent_size": "Unstable regulator / on-time jitter shows as volume scatter.",
         "missing_dot": "Z too high or on-time too short → no deposit.",
@@ -656,7 +656,7 @@ class PostInspectionWorkflow:
             row = next((c for c in causes if c.cause_id == "nozzle_blockage"), None)
             pct = f"{row.likelihood_pct:.0f}%" if row else "n/a"
             return (
-                f"Nozzle blockage likelihood is {pct}. NSW guidance: keep nozzle ID ≥ 5× largest "
+                f"Nozzle blockage likelihood is {pct}. DARA guidance: keep nozzle ID ≥ 5× largest "
                 "powder particle, avoid excessive pressure (separates flux/metal), and clean tips with IPA ultrasonic."
             )
 

@@ -67,7 +67,7 @@ function Header({ title, subtitle }: { title: string; subtitle: string }) {
           letterSpacing: "0.04em",
         }}
       >
-        NSW
+        DARA
       </div>
     </div>
   )

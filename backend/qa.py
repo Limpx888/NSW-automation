@@ -9,7 +9,7 @@ from backend.vision import DISPLAY_LABELS
 
 
 SYSTEM_PROMPT = """You are DARA, an industrial solder-paste / micro-dispensing quality assistant
-for NSW Automation. Answer the operator's question using the vision analysis context.
+for DARA. Answer the operator's question using the vision analysis context.
 Be concise, technical, and actionable. If the context is insufficient, say what extra
 info (photo angle, powder type, nozzle ID, pressure/time) would help. Do not invent
 detections that were not provided.
@@ -42,16 +42,17 @@ def _fallback_answer(question: str, analysis: dict[str, Any] | None) -> str:
 
     if any(k in q for k in ("cause", "why", "fix", "root")):
         tips = {
-            "too_little": "Check nozzle partial clog, low pressure/time, or powder–nozzle 5× mismatch.",
             "too_much": "Lower pressure/time, verify Z-gap, and confirm syringe is not over-pressurized.",
             "inconsistent_size": "Look for trapped air in the syringe, unstable pressure, or intermittent clog.",
             "missing_dot": "Inspect tip for full clog, empty syringe, or Z height too high to wet the pad.",
             "spreading": "Paste may be warm/low-viscosity, Z too low, or dwell time too long.",
             "air_bubble": "Degas material, store tip-down, and review retract/break-off settings.",
-            "no_defect_detected": "No strong defect signal - verify lighting/focus if the deposit still looks wrong.",
+            "insufficient_volume": "Review dispense time, pressure, and material flow.",
+            "missing_deposit": "Check for empty barrel, clogged nozzle, or extreme Z-height.",
+            "excess_volume": "Lower pressure, reduce dispense time, or check for material warming.",
         }
         defect = analysis.get("defect_class", "no_defect_detected")
-        return f"Primary finding: {label}. {tips.get(defect, 'Review process parameters against NSW guidance.')}"
+        return f"Primary finding: {label}. {tips.get(defect, 'Review process parameters against DARA guidance.')}"
 
     return (
         f"Vision flagged {label} at {conf:.0%} with {count} box(es). "
