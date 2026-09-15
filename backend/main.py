@@ -396,32 +396,46 @@ async def run_diagnostics(
 
 @app.get("/api/dashboard/metrics")
 @app.get("/dashboard/metrics")
-def get_dashboard_metrics():
-    # Point this to your SQLite database file path
+def get_dashboard_metrics(user_email: str | None = None) -> dict[str, Any]:
+    """Return total scans and defects intercepted for the ESG impact panel."""
+    import sqlite3
     db_path = history.DEFAULT_DB
-    
+    total_scans = 0
+    defects_intercepted = 0
     try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        
+        if user_email:
+            cur.execute("SELECT COUNT(*) FROM scan_cases WHERE user_email = ?", (user_email,))
+            total_scans = (cur.fetchone() or (0,))[0]
             
-            # Get total scan count
-            cursor.execute("SELECT COUNT(*) FROM scan_cases")
-            total_scans = cursor.fetchone()[0] or 0
+            cur.execute("""
+                SELECT COUNT(*) FROM scan_cases 
+                WHERE defect_class IS NOT NULL 
+                AND defect_class != 'no_defect_detected' 
+                AND defect_class != '' 
+                AND user_email = ?
+            """, (user_email,))
+            defects_intercepted = (cur.fetchone() or (0,))[0]
+        else:
+            cur.execute("SELECT COUNT(*) FROM scan_cases")
+            total_scans = (cur.fetchone() or (0,))[0]
             
-            # Get intercepted defects count (records where defect_label is not 'pass')
-            cursor.execute("SELECT COUNT(*) FROM scan_cases WHERE defect_label != 'pass' AND defect_label IS NOT NULL")
-            defects_intercepted = cursor.fetchone()[0] or 0
+            cur.execute("""
+                SELECT COUNT(*) FROM scan_cases 
+                WHERE defect_class IS NOT NULL 
+                AND defect_class != 'no_defect_detected' 
+                AND defect_class != ''
+            """)
+            defects_intercepted = (cur.fetchone() or (0,))[0]
             
+        conn.close()
     except Exception as e:
-        print(f"Database error: {e}")
-        total_scans = 0
-        defects_intercepted = 0
-
-    return {
-        "total_scans": total_scans,
-        "defects_intercepted": defects_intercepted,
-    }
-
+        print(f"Database error in metrics: {e}")
+        pass
+        
+    return {"total_scans": total_scans, "defects_intercepted": defects_intercepted}
 
 @app.get("/health")
 def health() -> dict[str, str]:
