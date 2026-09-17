@@ -698,7 +698,7 @@ function LiveESGImpact({ userEmail }: { userEmail?: string }) {
       }
     }
     fetchMetrics()
-  }, [])
+  }, [userEmail])
 
   // Environmental impact logic: Assume each PCB saves 2g of paste and reduces 0.03kg of CO2 emissions
   const pasteSavedKg = (metrics.defects_intercepted * 2) / 1000
@@ -1169,6 +1169,7 @@ export default function App() {
         reports: 'Reports feature',
         history: 'History feature',
         learning: 'AI Learning Database',
+        profile: 'Profile',
       }
       setAuthReason(
         !user

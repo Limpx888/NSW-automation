@@ -24,6 +24,10 @@ from backend.vision import analyze_image, decode_image, load_model, model_status
 from backend.workflow import PostInspectionWorkflow
 from backend.cloud.supabase_client import client_status as cloud_client_status
 from backend.cloud.embeddings import embedder_status as cloud_embedder_status
+from backend.knowledge_base import get_mapped_knowledge, DEFECT_KNOWLEDGE_MAP
+from backend.guardrails import apply_domain_guardrails
+from backend.vector_search import find_similar_historical_solution
+
 
 app = FastAPI(
     title="DARA Solder Paste Scan",
@@ -394,49 +398,6 @@ async def run_diagnostics(
     }
 
 
-@app.get("/api/dashboard/metrics")
-@app.get("/dashboard/metrics")
-def get_dashboard_metrics(user_email: str | None = None) -> dict[str, Any]:
-    """Return total scans and defects intercepted for the ESG impact panel."""
-    import sqlite3
-    db_path = history.DEFAULT_DB
-    total_scans = 0
-    defects_intercepted = 0
-    try:
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
-        
-        if user_email:
-            cur.execute("SELECT COUNT(*) FROM scan_cases WHERE user_email = ?", (user_email,))
-            total_scans = (cur.fetchone() or (0,))[0]
-            
-            cur.execute("""
-                SELECT COUNT(*) FROM scan_cases 
-                WHERE defect_class IS NOT NULL 
-                AND defect_class != 'no_defect_detected' 
-                AND defect_class != '' 
-                AND user_email = ?
-            """, (user_email,))
-            defects_intercepted = (cur.fetchone() or (0,))[0]
-        else:
-            cur.execute("SELECT COUNT(*) FROM scan_cases")
-            total_scans = (cur.fetchone() or (0,))[0]
-            
-            cur.execute("""
-                SELECT COUNT(*) FROM scan_cases 
-                WHERE defect_class IS NOT NULL 
-                AND defect_class != 'no_defect_detected' 
-                AND defect_class != ''
-            """)
-            defects_intercepted = (cur.fetchone() or (0,))[0]
-            
-        conn.close()
-    except Exception as e:
-        print(f"Database error in metrics: {e}")
-        pass
-        
-    return {"total_scans": total_scans, "defects_intercepted": defects_intercepted}
-
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -555,6 +516,59 @@ def workflow_diagnose(payload: DiagnoseRequest) -> dict[str, Any]:
 
     result = wf.run(payload.answers)
     out = result.as_dict()
+
+    # ── Industrial Best Practice Workflow Integration ──
+    # Step 1: Semantic-Based Vector Search (RAG / Vector Search)
+    problem_text = (
+        payload.answers.get("problem_description")
+        or payload.answers.get("user_description")
+        or out.get("dispensing_problem")
+        or ""
+    )
+    sim_solution, similarity, sim_cause = find_similar_historical_solution(problem_text)
+
+    # Step 2: Structured Knowledge Graph & Relational Mapping
+    km = get_mapped_knowledge(out.get("defect_class"))
+    if km.get("label"):
+        out["defect_label"] = km["label"]
+
+    candidate_solutions: list[str] = []
+    # Prioritize high-similarity historical confirmed fix at the very top
+    if sim_solution and similarity >= 0.75:
+        candidate_solutions.append(f"[Historical Match ({int(similarity * 100)}%)] {sim_solution}")
+
+    for sol in km.get("solutions", []):
+        if sol not in candidate_solutions:
+            candidate_solutions.append(sol)
+
+    # Step 3: Expert Rules & Domain Constraints (Domain Guardrails)
+    validated_solutions = apply_domain_guardrails(out.get("defect_class"), candidate_solutions)
+
+    # Format action plan steps with domain precision
+    formatted_actions = []
+    for idx, sol in enumerate(validated_solutions, 1):
+        rel_cause = sim_cause if (idx == 1 and sim_solution and similarity >= 0.75) else km["causes"][(idx - 1) % len(km["causes"])]
+        formatted_actions.append({
+            "step": idx,
+            "title": f"Action {idx}",
+            "detail": sol,
+            "status": "In progress" if idx == 1 else "Pending",
+            "related_cause": rel_cause,
+        })
+    out["action_plan"] = formatted_actions
+
+    # Format causes from structured knowledge graph
+    if km.get("causes"):
+        out["causes"] = [
+            {
+                "cause_id": f"cause_{idx+1}",
+                "name": cause,
+                "likelihood_pct": max(15.0, 50.0 - idx * 15.0),
+                "reasoning": f"Identified via industrial knowledge graph for {out.get('defect_label') or out['defect_class']}.",
+            }
+            for idx, cause in enumerate(km["causes"])
+        ]
+
     session_id = payload.session_id or analysis.get("session_id")
     session_id = history.upsert_diagnosed_case(
         {
@@ -786,7 +800,12 @@ def mark_learning_success(payload: LearningSuccessRequest) -> dict[str, Any]:
         dispensing_problem=row.get("dispensing_problem"),
         exclude_case_id=row.get("case_id"),
     )
-    return {"case": row, "insights": insights}
+    return {
+        "status": "success",
+        "message": "Feedback recorded. Model knowledge base updated.",
+        "case": row,
+        "insights": insights,
+    }
 
 
 @app.get("/report/{session_id}")
@@ -982,6 +1001,7 @@ def cloud_status() -> dict[str, Any]:
 # ── Live Dashboard Endpoints (KeYing branch) ──────────────────────────────────
 
 @app.get("/realtime/case-volume")
+@app.get("/api/realtime/case-volume")
 def get_realtime_case_volume(months_back: int = 6, user_email: str | None = None) -> dict[str, Any]:
     """Return monthly case counts for the MiniHistory sparkline chart."""
     import sqlite3
@@ -1028,21 +1048,46 @@ def get_realtime_case_volume(months_back: int = 6, user_email: str | None = None
     return {"labels": labels, "values": values, "trend_pct": trend_pct}
 
 
+@app.get("/api/dashboard/metrics")
 @app.get("/dashboard/metrics")
-def get_dashboard_metrics() -> dict[str, Any]:
+def get_dashboard_metrics(user_email: str | None = None) -> dict[str, Any]:
     """Return total scans and defects intercepted for the ESG impact panel."""
     import sqlite3
-    db_path = history.DB_PATH
+    db_path = history.DEFAULT_DB
     total_scans = 0
     defects_intercepted = 0
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM scan_cases")
-        total_scans = (cur.fetchone() or (0,))[0]
-        cur.execute("SELECT COUNT(*) FROM scan_cases WHERE defect_class IS NOT NULL AND defect_class != 'no_defect_detected' AND defect_class != ''")
-        defects_intercepted = (cur.fetchone() or (0,))[0]
+        
+        if user_email:
+            cur.execute("SELECT COUNT(*) FROM scan_cases WHERE user_email = ?", (user_email,))
+            total_scans = (cur.fetchone() or (0,))[0]
+            
+            cur.execute("""
+                SELECT COUNT(*) FROM scan_cases 
+                WHERE defect_class IS NOT NULL 
+                AND defect_class != 'no_defect_detected' 
+                AND defect_class != '' 
+                AND user_email = ?
+            """, (user_email,))
+            defects_intercepted = (cur.fetchone() or (0,))[0]
+        else:
+            cur.execute("SELECT COUNT(*) FROM scan_cases")
+            total_scans = (cur.fetchone() or (0,))[0]
+            
+            cur.execute("""
+                SELECT COUNT(*) FROM scan_cases 
+                WHERE defect_class IS NOT NULL 
+                AND defect_class != 'no_defect_detected' 
+                AND defect_class != ''
+            """)
+            defects_intercepted = (cur.fetchone() or (0,))[0]
+            
         conn.close()
-    except Exception:
+    except Exception as e:
+        print(f"Database error in metrics: {e}")
         pass
+        
     return {"total_scans": total_scans, "defects_intercepted": defects_intercepted}
+

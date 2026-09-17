@@ -11,6 +11,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "data" / "scan_cases.db"
+DB_PATH = DEFAULT_DB
 
 
 def connect(db_path: Path | None = None) -> sqlite3.Connection:

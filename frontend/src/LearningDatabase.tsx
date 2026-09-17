@@ -27,7 +27,16 @@ function cleanSolution(text: string): string {
 function asList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value
-    .map((item) => (typeof item === "string" ? item : String((item as { name?: string })?.name || item)))
+    .map((item) => {
+      if (typeof item === "string") return item
+      if (item && typeof item === "object") {
+        const obj = item as Record<string, unknown>
+        const val = obj.detail || obj.action || obj.title || obj.name || obj.solution || obj.text
+        if (typeof val === "string" && val.trim()) return val.trim()
+        if (val != null) return String(val)
+      }
+      return typeof item === "object" ? "" : String(item)
+    })
     .filter(Boolean)
 }
 

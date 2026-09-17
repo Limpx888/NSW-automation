@@ -84,7 +84,18 @@ def _tokens(text: str) -> set[str]:
     return {t for t in _TOKEN_RE.findall((text or "").lower()) if t not in stop and len(t) > 2}
 
 
+def _item_to_text(item: Any) -> str:
+    if isinstance(item, str):
+        return item.strip()
+    if isinstance(item, dict):
+        val = item.get("detail") or item.get("action") or item.get("title") or item.get("name") or item.get("solution") or ""
+        return str(val).strip()
+    return str(item).strip() if item is not None else ""
+
+
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    raw_causes = _loads(row["possible_causes_json"])
+    raw_solutions = _loads(row["recommended_solutions_json"])
     return {
         "id": row["id"],
         "case_id": row["case_id"],
@@ -93,14 +104,15 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "dispensing_problem": row["dispensing_problem"],
         "defect_class": row["defect_class"],
         "defect_label": row["defect_label"],
-        "possible_causes": _loads(row["possible_causes_json"]),
-        "recommended_solutions": _loads(row["recommended_solutions_json"]),
+        "possible_causes": [_item_to_text(c) for c in raw_causes if _item_to_text(c)],
+        "recommended_solutions": [_item_to_text(s) for s in raw_solutions if _item_to_text(s)],
         "successful_solution": row["successful_solution"],
         "successful_cause": row["successful_cause"],
         "source": row["source"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
 
 
 def _seed_rows() -> list[dict[str, Any]]:
