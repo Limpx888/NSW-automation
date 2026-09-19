@@ -722,18 +722,8 @@ def history_analytics(
     return history.get_history_analytics(user_email=email, year=year, month=month)
 
 
-@app.get("/realtime/case-volume")
-def realtime_case_volume(
-    user_email: str | None = None,
-    months_back: int = 6,
-) -> dict[str, Any]:
-    """
-    Real-time monthly scan volume for the last `months_back` months.
-    Polled by the frontend every 10s to keep the MiniHistory chart live.
-    Uses a direct SQL GROUP BY aggregation — no full table scan.
-    """
-    email = user_email.strip() if user_email and user_email.strip() else None
-    return history.get_monthly_volume(user_email=email, months_back=max(2, min(months_back, 24)))
+
+
 
 
 @app.get("/cases/{session_id}")
