@@ -6,332 +6,445 @@
   <style>
     @page {
       size: A4;
-      margin: 1.6cm 1.5cm;
+      margin: 1.5cm 1.5cm 1.8cm 1.5cm;
+      
+      @bottom-left {
+        content: "{{ data.brand }} | Session {{ data.session_id }}";
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        font-size: 8pt;
+        color: #7A8B99;
+        border-top: 2px solid #E4E9EF;
+        padding-top: 6px;
+      }
+      
+      @bottom-right {
+        content: "Page " counter(page);
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        font-size: 8pt;
+        font-weight: bold;
+        color: #1B3A5F;
+        border-top: 2px solid #E4E9EF;
+        padding-top: 6px;
+      }
     }
 
     * {
       box-sizing: border-box;
+      margin: 0;
+      padding: 0;
     }
 
     body {
       font-family: 'Helvetica Neue', Arial, sans-serif;
-      color: #1B2126;
-      font-size: 10.5pt;
+      color: #2D3748;
+      font-size: 9.5pt;
       line-height: 1.5;
-      margin: 0;
     }
 
-    .page {
-      page-break-after: always;
+    /* ── Page break strategy ─────────────────────────── */
+    .page-break-before {
+      page-break-before: always;
+    }
+    
+    .avoid-break {
+      page-break-inside: avoid;
     }
 
-    .page:last-child {
-      page-break-after: auto;
+    /* ── Header Cover Block ─────────────────────────── */
+    .cover-block {
+      background-color: #F4F7FA;
+      border-left: 6px solid #1B3A5F;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+      position: relative;
     }
 
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      border-bottom: 2px solid #1B3A5F;
-      padding-bottom: 10px;
-      margin-bottom: 16px;
+    .cover-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .cover-table td {
+      vertical-align: middle;
+      border: none;
     }
 
     .brand-title {
-      font-size: 11pt;
-      font-weight: 800;
-      color: #1B3A5F;
-      letter-spacing: 0.04em;
-      margin: 0;
+      font-size: 10pt;
+      font-weight: 700;
+      color: #4A5568;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
     }
 
     .brand-sub {
-      font-size: 18pt;
-      font-weight: 800;
+      font-size: 22pt;
+      font-weight: 900;
       color: #1B3A5F;
-      margin: 2px 0 0;
-      letter-spacing: 0.02em;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+
+    .logo-container {
+      text-align: right;
     }
 
     .logo {
-      width: 54px;
-      height: 54px;
+      width: 48px;
+      height: 48px;
       border-radius: 50%;
       background: #1B3A5F;
       color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      text-align: center;
+      line-height: 48px;
       font-weight: 800;
-      font-size: 12pt;
+      font-size: 10pt;
       letter-spacing: 0.04em;
+      display: inline-block;
+      box-shadow: 0 4px 6px rgba(27, 58, 95, 0.1);
     }
-
-    .meta {
-      color: #8B96A5;
+    
+    .meta-date {
+      margin-top: 12px;
       font-size: 8.5pt;
-      margin: 0 0 14px;
+      color: #718096;
+      font-weight: 600;
     }
 
+    /* ── Section headings ───────────────────────────── */
     h2 {
-      font-size: 11pt;
+      font-size: 12pt;
+      font-weight: 800;
       color: #1B3A5F;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
-      border-bottom: 1px solid #DDE3E8;
+      letter-spacing: 0.05em;
+      border-bottom: 2px solid #1B3A5F;
       padding-bottom: 4px;
-      margin: 18px 0 8px;
+      margin: 24px 0 12px;
+    }
+    
+    /* Used for page 2 header */
+    h1 {
+      font-size: 18pt;
+      font-weight: 900;
+      color: #1B3A5F;
+      margin-bottom: 24px;
+      border-bottom: 3px solid #1B3A5F;
+      padding-bottom: 8px;
     }
 
     p {
       margin: 0 0 8px;
     }
 
-    .overview {
-      color: #3A4652;
-      font-size: 10pt;
+    .body-text {
+      color: #4A5568;
+      font-size: 9.5pt;
+      line-height: 1.6;
     }
 
-    .charts {
-      display: flex;
-      gap: 18px;
-      align-items: flex-start;
-      margin: 12px 0 8px;
+    /* ── KPI row ────────────────────────────────────── */
+    .kpi-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 12px 0;
+      margin: 16px -12px 24px;
     }
 
-    .chart-block {
-      flex: 1;
+    .kpi-table td {
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+      border-top: 4px solid #1B3A5F;
+      border-radius: 0 0 6px 6px;
+      padding: 12px 10px;
       text-align: center;
+      width: 25%;
+      vertical-align: middle;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     }
 
-    .chart-block img {
-      max-width: 100%;
-      height: auto;
-    }
-
-    .kpi-row {
-      display: flex;
-      gap: 10px;
-      margin: 10px 0 4px;
-    }
-
-    .kpi {
-      flex: 1;
-      background: #F4F7FA;
-      border: 1px solid #E4E9EF;
-      border-radius: 8px;
-      padding: 8px 10px;
-      text-align: center;
-    }
-
-    .kpi .label {
+    .kpi-label {
       font-size: 7.5pt;
-      color: #8B96A5;
+      color: #718096;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      margin-bottom: 4px;
     }
 
-    .kpi .value {
-      font-size: 14pt;
-      font-weight: 800;
+    .kpi-value {
+      font-size: 16pt;
+      font-weight: 900;
       color: #1B3A5F;
-      margin-top: 2px;
     }
 
-    table {
+    /* ── Charts ──────────────────────────────────────── */
+    .charts-table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 6px;
+      margin: 16px 0 24px;
     }
 
-    th,
-    td {
-      text-align: left;
-      padding: 7px 8px;
-      border-bottom: 1px solid #E7ECF1;
+    .charts-table td {
+      border: none;
+      padding: 0;
+      vertical-align: middle;
+    }
+
+    .charts-table .chart-left {
+      width: 45%;
+      text-align: center;
+      padding-right: 12px;
+    }
+
+    .charts-table .chart-right {
+      width: 55%;
+      text-align: center;
+      padding-left: 12px;
+    }
+
+    .charts-table img {
+      max-width: 100%;
+      height: auto;
+      /* Removed the strict max-height so charts can be large and beautiful */
+    }
+
+    /* ── Formal Data Tables ──────────────────────────── */
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      margin-bottom: 16px;
       font-size: 9pt;
-      vertical-align: top;
+      border-radius: 4px;
+      overflow: hidden;
     }
 
-    th {
-      color: #8B96A5;
+    table.data-table th,
+    table.data-table td {
+      text-align: left;
+      padding: 10px 12px;
+      vertical-align: middle;
+    }
+
+    table.data-table th {
+      color: #FFFFFF;
       font-weight: 700;
       font-size: 8pt;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
-      background: #F7F9FB;
+      letter-spacing: 0.05em;
+      background: #1B3A5F;
     }
-
-    .box {
-      background: #F2F4F7;
-      border: 1px solid #E1E6EC;
-      border-radius: 8px;
-      padding: 12px 14px;
-      margin-top: 8px;
+    
+    table.data-table tr:nth-child(even) {
+      background-color: #F8FAFC;
     }
-
-    .box li,
-    .list li {
-      margin-bottom: 5px;
+    
+    table.data-table tr:nth-child(odd) {
+      background-color: #FFFFFF;
     }
-
-    .footer {
-      margin-top: 22px;
-      padding-top: 8px;
-      border-top: 1px solid #DDE3E8;
-      display: flex;
-      justify-content: space-between;
-      color: #8B96A5;
-      font-size: 8pt;
+    
+    table.data-table td {
+      border-bottom: 1px solid #EDF2F7;
+      color: #2D3748;
+    }
+    
+    /* ── Numbered badges for Sequence table ──────────── */
+    .step-badge {
+      display: inline-block;
+      width: 22px;
+      height: 22px;
+      background: #1B3A5F;
+      color: white;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 22px;
+      font-size: 8.5pt;
+      font-weight: bold;
+      margin-right: 8px;
     }
 
     .note {
-      background: #EEF6F4;
-      border-left: 3px solid #2A9D8F;
-      padding: 10px 12px;
-      font-size: 9.5pt;
-      margin-top: 8px;
+      background: #EBF8FF;
+      border-left: 4px solid #3182CE;
+      padding: 12px 16px;
+      font-size: 9pt;
+      margin-top: 12px;
+      margin-bottom: 24px;
+      color: #2B6CB0;
+      border-radius: 0 4px 4px 0;
     }
   </style>
 </head>
 
 <body>
-  <section class="page">
-    <div class="header">
-      <div>
-        <p class="brand-title">{{ data.title }}</p>
-        <p class="brand-sub">{{ data.subtitle }}</p>
-      </div>
-      <div class="logo">DARA</div>
-    </div>
-    <div class="meta">Session {{ data.session_id }} · Generated {{ data.generated_at.strftime('%Y-%m-%d %H:%M UTC') }} ·
-      {{ data.brand }}</div>
-
-    <h2>Output Summary</h2>
-    <p class="overview">{{ data.methodology_note }}</p>
-    <p class="overview">{{ data.executive_summary }}</p>
-
-    <div class="kpi-row">
-      <div class="kpi">
-        <div class="label">Severity</div>
-        <div class="value">{{ data.severity }}</div>
-      </div>
-      <div class="kpi">
-        <div class="label">Quality / Yield</div>
-        <div class="value">{{ data.overall_quality_score }}%</div>
-      </div>
-      <div class="kpi">
-        <div class="label">Defect Regions</div>
-        <div class="value">{{ data.detection_count }}</div>
-      </div>
-      <div class="kpi">
-        <div class="label">Vision Conf.</div>
-        <div class="value">{{ '%.0f'|format(data.defect_confidence_pct) }}%</div>
-      </div>
+  <!-- ═══════════════════ PAGE 1 ═══════════════════ -->
+  <section>
+    <div class="cover-block">
+      <table class="cover-table">
+        <tr>
+          <td>
+            <div class="brand-title">{{ data.title }}</div>
+            <div class="brand-sub">{{ data.subtitle }}</div>
+            <div class="meta-date">GENERATED: {{ data.generated_at.strftime('%Y-%m-%d %H:%M UTC') }}</div>
+          </td>
+          <td class="logo-container">
+            <div class="logo">DARA</div>
+          </td>
+        </tr>
+      </table>
     </div>
 
-    <div class="charts">
-      <div class="chart-block">
-        <img src="data:image/png;base64,{{ defect_donut_b64 }}">
-      </div>
-      <div class="chart-block">
-        <img src="data:image/png;base64,{{ analysis_bars_b64 }}">
-      </div>
-    </div>
+    <h2>Executive Overview</h2>
+    <p class="body-text">{{ data.methodology_note }}</p>
+    <p class="body-text" style="font-weight: 600; color: #1B3A5F; margin-top: 8px;">{{ data.executive_summary }}</p>
 
-    <h2>Cause Analysis</h2>
-    <p class="overview">{{ data.process_insight }}</p>
-    <table>
+    <table class="kpi-table avoid-break">
       <tr>
-        <th>Defect / Cause</th>
-        <th>Probability</th>
-        <th>Reasoning</th>
+        <td>
+          <div class="kpi-label">Severity</div>
+          <div class="kpi-value">{{ data.severity }}</div>
+        </td>
+        <td>
+          <div class="kpi-label">Quality / Yield</div>
+          <div class="kpi-value">{{ data.overall_quality_score }}%</div>
+        </td>
+        <td>
+          <div class="kpi-label">Defect Regions</div>
+          <div class="kpi-value">{{ data.detection_count }}</div>
+        </td>
+        <td>
+          <div class="kpi-label">Vision Conf.</div>
+          <div class="kpi-value">{{ '%.0f'|format(data.defect_confidence_pct) }}%</div>
+        </td>
+      </tr>
+    </table>
+
+    <div class="avoid-break">
+      <h2>Statistical Distribution</h2>
+      <table class="charts-table">
+        <tr>
+          <td class="chart-left">
+            <img src="data:image/png;base64,{{ defect_donut_b64 }}" alt="Defect Distribution">
+          </td>
+          <td class="chart-right">
+            <img src="data:image/png;base64,{{ analysis_bars_b64 }}" alt="Analysis Statistics">
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <h2>Cause Analysis Details</h2>
+    <p class="body-text" style="margin-bottom:12px;">{{ data.process_insight }}</p>
+    <table class="data-table">
+      <tr>
+        <th style="width:25%;">Defect / Cause</th>
+        <th style="width:12%;">Probability</th>
+        <th>Engineering Reasoning</th>
       </tr>
       {% for c in data.causes|sort(attribute='score', reverse=True) %}
       <tr>
-        <td><strong>{{ c.name }}</strong></td>
-        <td>{{ c.score }}%</td>
+        <td style="font-weight: 600; color: #1B3A5F;">{{ c.name }}</td>
+        <td>
+          <span style="background: #E2E8F0; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 8pt; color: #4A5568;">
+            {{ c.score }}%
+          </span>
+        </td>
         <td>{{ c.explanation }}</td>
       </tr>
       {% endfor %}
     </table>
-
-    <div class="footer">
-      <span>{{ data.footer }}</span>
-      <span>1</span>
-    </div>
   </section>
 
-  <section class="page">
-    <div class="header">
-      <div>
-        <p class="brand-title">{{ data.title }}</p>
-        <p class="brand-sub">MAINTENANCE INSIGHTS</p>
-      </div>
-      <div class="logo">DARA</div>
-    </div>
+  <!-- ═══════════════════ PAGE 2 ═══════════════════ -->
+  <section class="page-break-before">
+    
+    <h1>MAINTENANCE INSIGHTS</h1>
 
-    <h2>Maintenance Items</h2>
-    <div class="box">
-      <ul>
-        {% for item in data.maintenance_items %}
-        <li>{{ item }}</li>
-        {% endfor %}
-      </ul>
+    <div class="avoid-break">
+      <h2>Actionable Findings</h2>
+      <table class="data-table">
+        <tr>
+          <th style="width: 50%;">Maintenance Items</th>
+          <th style="width: 50%;">Diagnostic Observations</th>
+        </tr>
+        <tr>
+          <td style="vertical-align: top; padding: 0;">
+            <table style="width:100%; border-collapse: collapse;">
+              {% for item in data.maintenance_items %}
+              <tr>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #EDF2F7; border-right: 1px solid #EDF2F7;">&bull; {{ item }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </td>
+          <td style="vertical-align: top; padding: 0;">
+            <table style="width:100%; border-collapse: collapse;">
+              {% for item in data.diagnostic_findings %}
+              <tr>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #EDF2F7;">&bull; {{ item }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </td>
+        </tr>
+      </table>
     </div>
-
-    <h2>Diagnostic Findings</h2>
-    <ul class="list">
-      {% for item in data.diagnostic_findings %}
-      <li>{{ item }}</li>
-      {% endfor %}
-    </ul>
 
     {% if data.similar_case_note %}
-    <div class="note">{{ data.similar_case_note }}</div>
+    <div class="note avoid-break">{{ data.similar_case_note }}</div>
     {% endif %}
 
-    <h2>Recommended Troubleshooting Sequence</h2>
-    <ol class="list">
-      {% for step in data.action_plan %}
-      <li>{{ step }}</li>
-      {% endfor %}
-    </ol>
+    <div class="avoid-break">
+      <h2>Recommended Troubleshooting Sequence</h2>
+      <table class="data-table">
+        <tr>
+          <th style="width: 8%;">Step</th>
+          <th>Action Required</th>
+        </tr>
+        {% for step in data.action_plan %}
+        <tr>
+          <td style="text-align: center;"><div class="step-badge">{{ loop.index }}</div></td>
+          <td style="font-weight: 600;">{{ step }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
 
     <h2>Geometric Feature Extraction</h2>
-    <table>
+    <table class="data-table">
       <tr>
-        <th>ID</th>
-        <th>Defect Class</th>
-        <th>Confidence</th>
-        <th>Surface Area (px²)</th>
+        <th style="width: 15%;">Region ID</th>
+        <th style="width: 35%;">Detected Classification</th>
+        <th style="width: 20%;">AI Confidence</th>
+        <th style="width: 30%;">Surface Area (px²)</th>
       </tr>
       {% if data.detections %}
       {% for d in data.detections %}
       <tr>
-        <td>{{ d.id }}</td>
-        <td>{{ d.defect_class }}</td>
-        <td>{{ '%.1f'|format(d.confidence_pct) }}%</td>
-        <td>{% if d.area_px is not none %}{{ '%.0f'|format(d.area_px) }}{% else %}—{% endif %}</td>
+        <td style="font-family: monospace; font-weight: bold; color: #718096;">#{{ d.id }}</td>
+        <td style="font-weight: 500;">{{ d.defect_class }}</td>
+        <td>
+          <span style="background: #EBF8FF; color: #2B6CB0; padding: 2px 6px; border-radius: 4px; font-size: 8pt; font-weight: bold;">
+            {{ '%.1f'|format(d.confidence_pct) }}%
+          </span>
+        </td>
+        <td>{% if d.area_px is not none %}{{ '%.0f'|format(d.area_px) }}{% else %}&mdash;{% endif %}</td>
       </tr>
       {% endfor %}
       {% else %}
       <tr>
-        <td>-</td>
-        <td>None</td>
-        <td>100%</td>
-        <td>0</td>
+        <td colspan="4" style="text-align: center; color:#A0AEC0; padding: 20px;">No geometric detections recorded for this session.</td>
       </tr>
       {% endif %}
     </table>
 
-    <h2>Engineer Notes</h2>
-    <p>{{ data.engineer_notes or '—' }}</p>
-
-    <div class="footer">
-      <span>{{ data.footer }}</span>
-      <span>2</span>
+    <div class="avoid-break">
+      <h2>Engineer Notes & Remarks</h2>
+      <div style="background: #F8FAFC; border: 1px dashed #CBD5E0; padding: 16px; border-radius: 4px; font-style: italic; color: #4A5568;">
+        {{ data.engineer_notes or 'No manual notes were added by the engineer.' }}
+      </div>
     </div>
   </section>
 </body>

@@ -62,118 +62,261 @@ def _render_pdf_fallback(data: ReportData) -> bytes:
     donut = render_defect_donut(data)
     bars = render_analysis_bars(data)
 
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=16)
+    PAGE_W = 210  # A4 width mm
+    MARGIN = 12
+    USABLE_W = PAGE_W - 2 * MARGIN
 
-    def heading(title: str) -> None:
-        pdf.set_font("Helvetica", "B", 12)
+    class ReportPDF(FPDF):
+        def footer(self):
+            # Formal footer
+            self.set_y(-18)
+            self.set_draw_color(228, 233, 239)
+            self.line(MARGIN, self.get_y(), PAGE_W - MARGIN, self.get_y())
+            self.ln(2)
+            self.set_font("Helvetica", "", 8)
+            self.set_text_color(122, 139, 153)
+            self.cell(USABLE_W / 2, 5, _safe(f"{data.brand} | Session {data.session_id}"), ln=False)
+            self.set_font("Helvetica", "B", 8)
+            self.set_text_color(27, 58, 95)
+            self.cell(USABLE_W / 2, 5, f"Page {self.page_no()}", ln=True, align="R")
+
+    pdf = ReportPDF()
+    pdf.set_auto_page_break(auto=True, margin=20)
+
+    def heading(title: str, size: int = 12) -> None:
+        pdf.set_font("Helvetica", "B", size)
         pdf.set_text_color(27, 58, 95)
         pdf.cell(0, 8, _safe(title), ln=True)
-        pdf.set_draw_color(221, 227, 232)
-        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.set_draw_color(27, 58, 95)
+        # Thicker line for formal header
+        pdf.set_line_width(0.5)
+        pdf.line(MARGIN, pdf.get_y(), PAGE_W - MARGIN, pdf.get_y())
+        pdf.set_line_width(0.2)
         pdf.ln(3)
-        pdf.set_text_color(27, 33, 38)
 
-    def body(text: str, size: int = 10) -> None:
+    def body(text: str, size: int = 9) -> None:
         pdf.set_font("Helvetica", "", size)
+        pdf.set_text_color(74, 85, 104)
         pdf.multi_cell(0, 5, _safe(text))
         pdf.ln(1)
+        
+    def table_header(*cols):
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_fill_color(27, 58, 95)
+        pdf.set_text_color(255, 255, 255)
+        for w, text in cols:
+            pdf.cell(w, 7, _safe(text), border=1, fill=True)
+        pdf.ln()
 
-    # Page 1
+    # ── Page 1 ──────────────────────────────────────────
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.set_text_color(27, 58, 95)
-    pdf.cell(0, 6, _safe(data.title), ln=True)
-    pdf.set_font("Helvetica", "B", 18)
-    pdf.cell(0, 9, _safe(data.subtitle), ln=True)
-    pdf.set_font("Helvetica", "I", 8)
-    pdf.set_text_color(139, 150, 165)
-    pdf.multi_cell(
-        0,
-        4,
-        _safe(
-            f"Session {data.session_id} | Generated {data.generated_at:%Y-%m-%d %H:%M UTC} | {data.brand}"
-        ),
-    )
-    pdf.ln(2)
-
-    heading("Output Summary")
-    body(data.methodology_note, 9)
-    body(data.executive_summary, 9)
+    
+    # Cover block
+    pdf.set_fill_color(244, 247, 250)
+    pdf.rect(MARGIN, MARGIN, USABLE_W, 25, style="F")
+    pdf.set_fill_color(27, 58, 95)
+    pdf.rect(MARGIN, MARGIN, 2, 25, style="F")
+    
+    pdf.set_xy(MARGIN + 5, MARGIN + 4)
     pdf.set_font("Helvetica", "B", 10)
-    pdf.set_text_color(27, 58, 95)
-    pdf.cell(
-        0,
-        6,
-        _safe(
-            f"Severity {data.severity}  |  Quality {data.overall_quality_score}%  |  "
-            f"Regions {data.detection_count}  |  Confidence {data.defect_confidence_pct:.0f}%"
-        ),
-        ln=True,
-    )
-    pdf.ln(2)
-    pdf.image(io.BytesIO(donut), x=12, w=85)
-    pdf.image(io.BytesIO(bars), x=105, y=pdf.get_y() - 55, w=95)
-    pdf.ln(58)
-
-    heading("Cause Analysis")
-    body(data.process_insight, 9)
-    for cause in sorted(data.causes, key=lambda c: -c.score):
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.set_text_color(27, 58, 95)
-        pdf.cell(0, 5, _safe(f"{cause.name} - {cause.score}%"), ln=True)
-        pdf.set_font("Helvetica", "", 9)
-        pdf.set_text_color(58, 70, 82)
-        pdf.multi_cell(0, 4.5, _safe(cause.explanation))
-        pdf.ln(1)
-
-    pdf.set_y(-18)
-    pdf.set_font("Helvetica", "", 8)
-    pdf.set_text_color(139, 150, 165)
-    pdf.cell(0, 5, _safe(f"{data.footer}                                                              1"), ln=True)
-
-    # Page 2
-    pdf.add_page()
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.set_text_color(27, 58, 95)
-    pdf.cell(0, 6, _safe(data.title), ln=True)
+    pdf.set_text_color(74, 85, 104)
+    pdf.cell(0, 5, _safe(data.title), ln=True)
+    
+    pdf.set_x(MARGIN + 5)
     pdf.set_font("Helvetica", "B", 18)
-    pdf.cell(0, 9, "MAINTENANCE INSIGHTS", ln=True)
+    pdf.set_text_color(27, 58, 95)
+    pdf.cell(0, 8, _safe(data.subtitle), ln=True)
+    
+    pdf.set_x(MARGIN + 5)
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(113, 128, 150)
+    pdf.cell(0, 5, _safe(f"GENERATED: {data.generated_at:%Y-%m-%d %H:%M UTC}"), ln=True)
+    
+    pdf.set_xy(MARGIN, MARGIN + 28)
+    
+    heading("Executive Overview")
+    body(data.methodology_note, 9)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(27, 58, 95)
+    pdf.multi_cell(0, 5, _safe(data.executive_summary))
     pdf.ln(2)
 
-    heading("Maintenance Items")
-    for item in data.maintenance_items:
-        body(f"- {item}", 9)
+    # KPI Table
+    kpi_w = USABLE_W / 4
+    pdf.set_font("Helvetica", "B", 7)
+    pdf.set_text_color(113, 128, 150)
+    y_before = pdf.get_y()
+    pdf.cell(kpi_w, 4, "SEVERITY", align="C")
+    pdf.cell(kpi_w, 4, "QUALITY / YIELD", align="C")
+    pdf.cell(kpi_w, 4, "DEFECT REGIONS", align="C")
+    pdf.cell(kpi_w, 4, "VISION CONF.", align="C", ln=True)
+    
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_text_color(27, 58, 95)
+    pdf.cell(kpi_w, 7, _safe(data.severity), align="C")
+    pdf.cell(kpi_w, 7, f"{data.overall_quality_score}%", align="C")
+    pdf.cell(kpi_w, 7, str(data.detection_count), align="C")
+    pdf.cell(kpi_w, 7, f"{data.defect_confidence_pct:.0f}%", align="C", ln=True)
+    
+    # Draw simple borders for KPIs
+    pdf.set_draw_color(226, 232, 240)
+    pdf.line(MARGIN, y_before - 2, PAGE_W - MARGIN, y_before - 2)
+    pdf.line(MARGIN, pdf.get_y() + 2, PAGE_W - MARGIN, pdf.get_y() + 2)
+    pdf.ln(6)
 
-    heading("Diagnostic Findings")
-    for item in data.diagnostic_findings:
-        body(f"- {item}", 9)
+    # Charts — restored to larger sizes. Aspect ratio for donut is 1.0, bars is ~0.77
+    heading("Statistical Distribution")
+    chart_y = pdf.get_y()
+    chart_w_left = USABLE_W * 0.45
+    chart_w_right = USABLE_W * 0.55
+    chart_h_left = chart_w_left
+    chart_h_right = chart_w_right * (3.4 / 4.4)
+    chart_h = max(chart_h_left, chart_h_right)
+    
+    pdf.image(io.BytesIO(donut), x=MARGIN, y=chart_y, w=chart_w_left)
+    pdf.image(io.BytesIO(bars), x=MARGIN + chart_w_left, y=chart_y, w=chart_w_right)
+    pdf.set_y(chart_y + chart_h + 5)
 
+    heading("Cause Analysis Details")
+    body(data.process_insight, 9)
+    
+    table_header((USABLE_W * 0.4, "Defect / Cause"), (USABLE_W * 0.15, "Prob."), (USABLE_W * 0.45, "Engineering Reasoning"))
+    for i, cause in enumerate(sorted(data.causes, key=lambda c: -c.score)):
+        fill = i % 2 == 0
+        pdf.set_fill_color(248, 250, 252) if fill else pdf.set_fill_color(255, 255, 255)
+        pdf.set_text_color(45, 55, 72)
+        
+        # Calculate heights for multi-cell
+        pdf.set_font("Helvetica", "", 8)
+        lines = len(pdf.multi_cell(USABLE_W * 0.45, 5, _safe(cause.explanation), split_only=True))
+        h = max(6, lines * 5 + 2)
+        
+        y = pdf.get_y()
+        # Check page break
+        if y + h > 270:
+            pdf.add_page()
+            y = pdf.get_y()
+            table_header((USABLE_W * 0.4, "Defect / Cause"), (USABLE_W * 0.15, "Prob."), (USABLE_W * 0.45, "Engineering Reasoning"))
+            
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_text_color(27, 58, 95)
+        pdf.cell(USABLE_W * 0.4, h, _safe(cause.name), border=1, fill=fill)
+        pdf.cell(USABLE_W * 0.15, h, f"{cause.score}%", border=1, fill=fill, align="C")
+        
+        pdf.set_xy(MARGIN + USABLE_W * 0.55, y)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(74, 85, 104)
+        pdf.multi_cell(USABLE_W * 0.45, 5, _safe(cause.explanation), border=1, fill=fill)
+        pdf.set_y(y + h)
+
+    pdf.ln(4)
+
+    # ── Page 2 ──────────────────────────────────────────
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(27, 58, 95)
+    pdf.cell(0, 10, "MAINTENANCE INSIGHTS", ln=True)
+    pdf.set_line_width(0.8)
+    pdf.line(MARGIN, pdf.get_y(), PAGE_W - MARGIN, pdf.get_y())
+    pdf.set_line_width(0.2)
+    pdf.ln(5)
+
+    heading("Actionable Findings")
+    table_header((USABLE_W * 0.5, "Maintenance Items"), (USABLE_W * 0.5, "Diagnostic Observations"))
+    max_items = max(len(data.maintenance_items), len(data.diagnostic_findings))
+    for i in range(max_items):
+        m_item = data.maintenance_items[i] if i < len(data.maintenance_items) else ""
+        d_item = data.diagnostic_findings[i] if i < len(data.diagnostic_findings) else ""
+        
+        fill = i % 2 == 0
+        pdf.set_fill_color(248, 250, 252) if fill else pdf.set_fill_color(255, 255, 255)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(74, 85, 104)
+        
+        lines_m = len(pdf.multi_cell(USABLE_W * 0.5, 5, _safe(f"- {m_item}" if m_item else ""), split_only=True))
+        lines_d = len(pdf.multi_cell(USABLE_W * 0.5, 5, _safe(f"- {d_item}" if d_item else ""), split_only=True))
+        h = max(6, max(lines_m, lines_d) * 5 + 2)
+        
+        y = pdf.get_y()
+        pdf.multi_cell(USABLE_W * 0.5, 5, _safe(f"- {m_item}" if m_item else ""), border=1, fill=fill)
+        pdf.set_xy(MARGIN + USABLE_W * 0.5, y)
+        pdf.multi_cell(USABLE_W * 0.5, 5, _safe(f"- {d_item}" if d_item else ""), border=1, fill=fill)
+        pdf.set_y(y + h)
+
+    pdf.ln(4)
     if data.similar_case_note:
-        body(data.similar_case_note, 9)
+        pdf.set_fill_color(235, 248, 255)
+        pdf.set_text_color(43, 108, 176)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.multi_cell(0, 6, _safe(data.similar_case_note), fill=True, border=0)
+        pdf.ln(4)
 
     heading("Recommended Troubleshooting Sequence")
+    table_header((USABLE_W * 0.15, "Step"), (USABLE_W * 0.85, "Action Required"))
     for i, step in enumerate(data.action_plan, 1):
-        body(f"{i}. {step}", 9)
+        fill = i % 2 == 1
+        pdf.set_fill_color(248, 250, 252) if fill else pdf.set_fill_color(255, 255, 255)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_text_color(27, 58, 95)
+        
+        lines = len(pdf.multi_cell(USABLE_W * 0.85, 5, _safe(step), split_only=True))
+        h = max(6, lines * 5 + 2)
+        y = pdf.get_y()
+        
+        if y + h > 270:
+            pdf.add_page()
+            y = pdf.get_y()
+            table_header((USABLE_W * 0.15, "Step"), (USABLE_W * 0.85, "Action Required"))
+            
+        pdf.cell(USABLE_W * 0.15, h, f"Step {i}", border=1, fill=fill, align="C")
+        pdf.set_xy(MARGIN + USABLE_W * 0.15, y)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(74, 85, 104)
+        pdf.multi_cell(USABLE_W * 0.85, 5, _safe(step), border=1, fill=fill)
+        pdf.set_y(y + h)
+
+    pdf.ln(4)
 
     heading("Geometric Feature Extraction")
+    table_header((USABLE_W * 0.15, "Region ID"), (USABLE_W * 0.4, "Detected Class"), (USABLE_W * 0.2, "Confidence"), (USABLE_W * 0.25, "Area (px2)"))
     if data.detections:
-        for d in data.detections:
+        for i, d in enumerate(data.detections):
+            fill = i % 2 == 0
+            pdf.set_fill_color(248, 250, 252) if fill else pdf.set_fill_color(255, 255, 255)
+            y = pdf.get_y()
+            if y + 6 > 270:
+                pdf.add_page()
+                table_header((USABLE_W * 0.15, "Region ID"), (USABLE_W * 0.4, "Detected Class"), (USABLE_W * 0.2, "Confidence"), (USABLE_W * 0.25, "Area (px2)"))
+            
+            pdf.set_font("Courier", "B", 8)
+            pdf.set_text_color(113, 128, 150)
+            pdf.cell(USABLE_W * 0.15, 6, f"#{d.id}", border=1, fill=fill, align="C")
+            
+            pdf.set_font("Helvetica", "", 8)
+            pdf.set_text_color(45, 55, 72)
+            pdf.cell(USABLE_W * 0.4, 6, _safe(d.defect_class), border=1, fill=fill)
+            
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_text_color(43, 108, 176)
+            pdf.cell(USABLE_W * 0.2, 6, f"{d.confidence_pct:.1f}%", border=1, fill=fill, align="C")
+            
+            pdf.set_font("Helvetica", "", 8)
+            pdf.set_text_color(74, 85, 104)
             area = f"{d.area_px:.0f}" if d.area_px is not None else "-"
-            body(
-                f"#{d.id} {d.defect_class} | conf {d.confidence_pct:.1f}% | area {area} px2",
-                9,
-            )
+            pdf.cell(USABLE_W * 0.25, 6, area, border=1, fill=fill, align="C")
+            pdf.ln()
     else:
-        body("No geometric detections recorded.", 9)
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(160, 174, 192)
+        pdf.cell(0, 8, "No geometric detections recorded for this session.", border=1, align="C", ln=True)
 
-    heading("Engineer Notes")
-    body(data.engineer_notes or "-", 9)
-
-    pdf.set_y(-18)
-    pdf.set_font("Helvetica", "", 8)
-    pdf.set_text_color(139, 150, 165)
-    pdf.cell(0, 5, _safe(f"{data.footer}                                                              2"), ln=True)
+    pdf.ln(4)
+    heading("Engineer Notes & Remarks")
+    pdf.set_fill_color(248, 250, 252)
+    pdf.set_text_color(74, 85, 104)
+    pdf.set_font("Helvetica", "I", 9)
+    # Just a simple dashed-looking box is hard in FPDF, we'll use a normal border
+    pdf.multi_cell(0, 6, _safe(data.engineer_notes or "No manual notes were added by the engineer."), border=1, fill=True)
 
     out = io.BytesIO()
     pdf.output(out)
@@ -257,7 +400,8 @@ def _render_pdf_reportlab(data: ReportData) -> bytes:
         ["SEVERITY", "QUALITY / YIELD", "DEFECT REGIONS", "CONFIDENCE"],
         [data.severity, f"{data.overall_quality_score}%", str(data.detection_count), f"{data.defect_confidence_pct:.0f}%"]
     ]
-    t = Table(kpi_data, colWidths=[130, 130, 130, 130])
+    # letter usable = 540pt (612 - 2*36); keep table within bounds
+    t = Table(kpi_data, colWidths=[125, 125, 125, 125])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F4F7FA')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#8B96A5')),
@@ -278,9 +422,9 @@ def _render_pdf_reportlab(data: ReportData) -> bytes:
 
     donut_bytes = render_defect_donut(data)
     bars_bytes = render_analysis_bars(data)
-    img_donut = RLImage(io.BytesIO(donut_bytes), width=230, height=140)
-    img_bars = RLImage(io.BytesIO(bars_bytes), width=280, height=140)
-    chart_table = Table([[img_donut, img_bars]], colWidths=[240, 290])
+    img_donut = RLImage(io.BytesIO(donut_bytes), width=220, height=135)
+    img_bars = RLImage(io.BytesIO(bars_bytes), width=260, height=135)
+    chart_table = Table([[img_donut, img_bars]], colWidths=[250, 280])
     chart_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
