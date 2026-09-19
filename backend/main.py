@@ -28,6 +28,20 @@ from backend.knowledge_base import get_mapped_knowledge, DEFECT_KNOWLEDGE_MAP
 from backend.guardrails import apply_domain_guardrails
 from backend.vector_search import find_similar_historical_solution
 
+import os
+from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
+
+# --- NEW: Dual-engine database configuration ---
+load_dotenv()
+SUPABASE_URL = os.getenv("DATABASE_URL")
+supabase_engine = None
+if SUPABASE_URL:
+    try:
+        # pool_pre_ping=True automatically handles database disconnection and reconnection
+        supabase_engine = create_engine(SUPABASE_URL, pool_pre_ping=True)
+    except Exception as e:
+        print(f"Supabase engine initialization failed, falling back to local SQLite: {e}")
 
 app = FastAPI(
     title="DARA Solder Paste Scan",
@@ -998,28 +1012,48 @@ def cloud_status() -> dict[str, Any]:
     }
 
 
-# ── Live Dashboard Endpoints (KeYing branch) ──────────────────────────────────
-
 @app.get("/realtime/case-volume")
 @app.get("/api/realtime/case-volume")
 def get_realtime_case_volume(months_back: int = 6, user_email: str | None = None) -> dict[str, Any]:
-    """Return monthly case counts for the MiniHistory sparkline chart."""
-    import sqlite3
+    """Returns the scan volume trend over the past few months (dual-engine)"""
     from datetime import datetime, timezone
     from dateutil.relativedelta import relativedelta
-
-    db_path = history.DB_PATH
     now = datetime.now(tz=timezone.utc)
+    
+    # Prepare default labels in advance (X-axis months)
+    labels = [(now - relativedelta(months=i)).strftime("%b") for i in range(months_back - 1, -1, -1)]
+    values = [0] * months_back
 
-    labels: list[str] = []
-    values: list[int] = []
+    # ==== Try using Supabase Cloud ====
+    if supabase_engine:
+        try:
+            with supabase_engine.connect() as conn:
+                for i in range(months_back - 1, -1, -1):
+                    month_dt = now - relativedelta(months=i)
+                    y, m = month_dt.year, month_dt.month
+                    if user_email:
+                        # Note: PostgreSQL syntax for extracting year and month differs from SQLite
+                        query = text("SELECT COUNT(*) FROM scan_cases WHERE EXTRACT(YEAR FROM created_at::timestamp) = :y AND EXTRACT(MONTH FROM created_at::timestamp) = :m AND user_email = :email")
+                        count = conn.execute(query, {"y": y, "m": m, "email": user_email}).scalar()
+                    else:
+                        query = text("SELECT COUNT(*) FROM scan_cases WHERE EXTRACT(YEAR FROM created_at::timestamp) = :y AND EXTRACT(MONTH FROM created_at::timestamp) = :m")
+                        count = conn.execute(query, {"y": y, "m": m}).scalar()
+                    values[months_back - 1 - i] = count or 0
+            
+            trend_pct = None
+            if len(values) >= 2 and values[-2] > 0:
+                trend_pct = round(((values[-1] - values[-2]) / values[-2]) * 100, 1)
+            return {"labels": labels, "values": values, "trend_pct": trend_pct, "data_source": "cloud"}
+        except Exception as e:
+            print(f"Failed to read cloud chart data, downgrading to local SQLite: {e}")
 
+    # ==== Downgrade to local SQLite ====
+    import sqlite3
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(history.DB_PATH)
         cur = conn.cursor()
         for i in range(months_back - 1, -1, -1):
             month_dt = now - relativedelta(months=i)
-            label = month_dt.strftime("%b")
             y, m = month_dt.year, month_dt.month
             if user_email:
                 cur.execute(
@@ -1032,62 +1066,55 @@ def get_realtime_case_volume(months_back: int = 6, user_email: str | None = None
                     (str(y), f"{m:02d}"),
                 )
             count = (cur.fetchone() or (0,))[0]
-            labels.append(label)
-            values.append(count)
+            values[months_back - 1 - i] = count
         conn.close()
     except Exception:
-        # Fallback if table doesn't exist yet
-        labels = [(now - relativedelta(months=i)).strftime("%b") for i in range(months_back - 1, -1, -1)]
-        values = [0] * months_back
+        pass
 
-    # Trend: compare last month vs. previous month
-    trend_pct: float | None = None
+    trend_pct = None
     if len(values) >= 2 and values[-2] > 0:
         trend_pct = round(((values[-1] - values[-2]) / values[-2]) * 100, 1)
-
-    return {"labels": labels, "values": values, "trend_pct": trend_pct}
+    return {"labels": labels, "values": values, "trend_pct": trend_pct, "data_source": "local"}
 
 
 @app.get("/api/dashboard/metrics")
 @app.get("/dashboard/metrics")
 def get_dashboard_metrics(user_email: str | None = None) -> dict[str, Any]:
-    """Return total scans and defects intercepted for the ESG impact panel."""
-    import sqlite3
-    db_path = history.DEFAULT_DB
+    """Returns total scans and intercepted defects count (dual-engine)"""
     total_scans = 0
     defects_intercepted = 0
+
+    # ==== Try using Supabase Cloud ====
+    if supabase_engine:
+        try:
+            with supabase_engine.connect() as conn:
+                if user_email:
+                    total_scans = conn.execute(text("SELECT COUNT(*) FROM scan_cases WHERE user_email = :email"), {"email": user_email}).scalar()
+                    defects_intercepted = conn.execute(text("SELECT COUNT(*) FROM scan_cases WHERE defect_class IS NOT NULL AND defect_class != 'no_defect_detected' AND defect_class != '' AND user_email = :email"), {"email": user_email}).scalar()
+                else:
+                    total_scans = conn.execute(text("SELECT COUNT(*) FROM scan_cases")).scalar()
+                    defects_intercepted = conn.execute(text("SELECT COUNT(*) FROM scan_cases WHERE defect_class IS NOT NULL AND defect_class != 'no_defect_detected' AND defect_class != ''")).scalar()
+            return {"total_scans": total_scans, "defects_intercepted": defects_intercepted, "data_source": "cloud"}
+        except Exception as e:
+            print(f"Failed to read cloud metrics data, downgrading to local SQLite: {e}")
+
+    # ==== Downgrade to local SQLite ====
+    import sqlite3
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(history.DEFAULT_DB)
         cur = conn.cursor()
-        
         if user_email:
             cur.execute("SELECT COUNT(*) FROM scan_cases WHERE user_email = ?", (user_email,))
             total_scans = (cur.fetchone() or (0,))[0]
-            
-            cur.execute("""
-                SELECT COUNT(*) FROM scan_cases 
-                WHERE defect_class IS NOT NULL 
-                AND defect_class != 'no_defect_detected' 
-                AND defect_class != '' 
-                AND user_email = ?
-            """, (user_email,))
+            cur.execute("SELECT COUNT(*) FROM scan_cases WHERE defect_class IS NOT NULL AND defect_class != 'no_defect_detected' AND defect_class != '' AND user_email = ?", (user_email,))
             defects_intercepted = (cur.fetchone() or (0,))[0]
         else:
             cur.execute("SELECT COUNT(*) FROM scan_cases")
             total_scans = (cur.fetchone() or (0,))[0]
-            
-            cur.execute("""
-                SELECT COUNT(*) FROM scan_cases 
-                WHERE defect_class IS NOT NULL 
-                AND defect_class != 'no_defect_detected' 
-                AND defect_class != ''
-            """)
+            cur.execute("SELECT COUNT(*) FROM scan_cases WHERE defect_class IS NOT NULL AND defect_class != 'no_defect_detected' AND defect_class != ''")
             defects_intercepted = (cur.fetchone() or (0,))[0]
-            
         conn.close()
-    except Exception as e:
-        print(f"Database error in metrics: {e}")
+    except Exception:
         pass
         
-    return {"total_scans": total_scans, "defects_intercepted": defects_intercepted}
-
+    return {"total_scans": total_scans, "defects_intercepted": defects_intercepted, "data_source": "local"}
