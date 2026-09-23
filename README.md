@@ -58,22 +58,22 @@ not calibrated probabilities.
 
 ## Screenshots
 
-### Application View 1
+
 ![Application View 1](docs/images/app-screenshot-1.png)
 *Description: Overview of the main dashboard and diagnostic metrics.*
 
-### Application View 2
+
 ![Application View 2](docs/images/app-screenshot-2.png)
 *Description: Detailed view of the inspection process and analysis results.*
 
-### Application View 3
+
 ![Application View 3](docs/images/app-screenshot-3.png)
 *Description: Deep analysis and historical data correlation.*
 
-### Application View 4
+
 ![Application View 4](docs/images/app-screenshot-4.png)
 *Description: Cause charts and quality donut visualization.*
 
-### Application View 5
+
 ![Application View 5](docs/images/app-screenshot-5.png)
-*Description: Solder paste scan interface and defect detection.*
+*Description: Solder paste scan interface and defect detection.*
