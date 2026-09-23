@@ -1,4 +1,4 @@
-# DARA Solder Paste Scan
+# DARA - AI Dispensing Analysis & Root Cause Assistant
 
 - `frontend/` - React and Vite frontend
 - `backend/` - FastAPI and YOLO backend
